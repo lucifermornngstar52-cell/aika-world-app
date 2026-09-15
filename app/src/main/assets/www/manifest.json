@@ -1,0 +1,16 @@
+{
+  "name": "ПЕРВЫЕ ЛЮДИ",
+  "short_name": "Первые Люди",
+  "description": "Живая пиксельная деревня: жители думают, строят и выживают сами",
+  "lang": "ru",
+  "start_url": "./?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0d14",
+  "theme_color": "#0b0d14",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

@@ -1145,7 +1145,7 @@ function onMorning() {
   }
   // рождение: еда есть, дома есть, любовь есть
   const adults = villagers.filter(v => !v.isChild);
-  if (adults.length >= 2 && stocks.berries >= 15 && beds() >= 4 && era() >= 2 && rng() < 0.5 && villagers.length < 16) {
+  if (adults.length >= 2 && stocks.berries >= 12 && beds() >= 4 && era() >= 2 && rng() < 0.65 && villagers.length < 16) {
     const a = adults[Math.floor(rng() * adults.length)];
     let b = adults[Math.floor(rng() * adults.length)];
     if (b === a) b = adults[(adults.indexOf(a) + 1) % adults.length];
@@ -1319,14 +1319,14 @@ function updateMonster(m, dt) {
     if (d < 1.15) {
       m.atkT -= dt;
       if (m.atkT <= 0) {
-        m.atkT = 1.2;
+        m.atkT = 1.45;
         target.hp -= m.dmg;
         if (rng() < 0.3) think(target, 'Ай! Эта тварь кусается!');
         // шум боя будит спящих рядом — деревня обороняется толпой
         for (const w of villagers) {
-          if (w.state === 'sleep' && dist(w.x, w.y, target.x, target.y) < 7) {
-            w.path = null;
-            decide(w);
+          if (dist(w.x, w.y, target.x, target.y) < 11) {
+            if (w.state === 'sleep') { w.path = null; decide(w); }
+            else if (w.state === 'idle' || w.state === 'goto_sleep') { decide(w); }
           }
         }
         if (target.hp <= 0) killVillager(target, m);
@@ -1423,7 +1423,7 @@ function updateVillager(v, dt) {
     case 'goto_chop': {
       const o = v.targetObj;
       if (!o || o.regrow > 0) { v.state = 'idle'; v.decideT = 0.3; break; }
-      v.state = 'chop'; v.workT = Math.max(2, (4.5 - v.skill.chop * 0.4) / (v.tool === 'axe' ? 1.6 : 1));
+      v.state = 'chop'; v.workT = Math.max(1.4, (3.2 - v.skill.chop * 0.4) / (v.tool === 'axe' ? 1.6 : 1));
       break;
     }
     case 'chop': {
@@ -1434,10 +1434,10 @@ function updateVillager(v, dt) {
           removeObject(o);
           addObject('stump', o.x, o.y);
           regrowQueue.push({ x: o.x, y: o.y, at: simTime + 2 * DAY_LEN / rainMult() });
-          v.carry.wood += Math.ceil(3 * v.skill.chop);
+          v.carry.wood += Math.ceil(4 * v.skill.chop);
           v.skill.chop = Math.min(3, v.skill.chop + 0.06);
           totalWood += 3;
-          logEvent('🪓', `${v.name} срубил дерево (+3 🪵${v.tool === 'axe' ? ' топором' : ''})`);
+          logEvent('🪓', `${v.name} срубил дерево (+4 🪵${v.tool === 'axe' ? ' топором' : ''})`);
           if (hasTrait(v, 'hardworking') && rng() < 0.4) think(v, 'Работать так работать! Ещё одно!');
         }
         v.targetObj = null; v.state = 'idle'; v.decideT = 0.4 + rng() * 1.2;
@@ -1568,8 +1568,8 @@ function updateVillager(v, dt) {
       } else {
         v.atkT -= dt;
         if (v.atkT <= 0) {
-          v.atkT = 0.8;
-          const dmg = (v.spear ? 7 : 4) * (0.5 + v.skill.combat * 0.5) + (hasTrait(v, 'brave') ? 1 : 0);
+          v.atkT = 0.7;
+          const dmg = (v.spear ? 8 : 5) * (0.5 + v.skill.combat * 0.5) + (hasTrait(v, 'brave') ? 1 : 0);
           m.hp -= dmg;
           v.skill.combat = Math.min(3, v.skill.combat + 0.08);
           if (m.hp <= 0) {
@@ -1692,7 +1692,7 @@ function updateVillager(v, dt) {
         break;
       }
       v.state = 'build';
-      v.workT = { shelter: 4, farm: 5, hut: 6, house: 8 }[pendingBuild.kind] || 6;
+      v.workT = { shelter: 2.5, farm: 3.5, hut: 4.5, house: 6 }[pendingBuild.kind] || 4;
       break;
     }
     case 'build': {
@@ -1731,6 +1731,7 @@ function updateVillager(v, dt) {
     }
     case 'idle':
     default: {
+      if (!isNight()) v.hp = Math.min(20, v.hp + 0.5 * dt); // днём раны затягиваются
       v.decideT -= dt;
       if (v.decideT <= 0) decide(v);
       break;
@@ -2399,7 +2400,7 @@ document.getElementById('btnPause').onclick = () => {
   document.getElementById('btnPause').textContent = paused ? '▶' : '⏸';
 };
 document.getElementById('btnSpeed').onclick = () => {
-  simSpeed = simSpeed === 1 ? 2 : simSpeed === 2 ? 4 : 1;
+  simSpeed = simSpeed === 1 ? 2 : simSpeed === 2 ? 4 : simSpeed === 4 ? 8 : 1;
   document.getElementById('btnSpeed').textContent = simSpeed + '×';
 };
 document.getElementById('btnWorld').onclick = () => {
