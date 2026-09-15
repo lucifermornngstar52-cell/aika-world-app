@@ -2568,6 +2568,15 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) saveG
 window.addEventListener('pagehide', () => saveGame());
 
 // ── Старт ─────────────────────────────────────────────────────────
+// самовосстановление: если браузер подсунул старый HTML из кэша — перезагружаем целиком
+if (!document.getElementById('worldsList')) {
+  let reloaded = false;
+  try { reloaded = !!sessionStorage.getItem('aikaReloaded'); } catch (e) {}
+  if (!reloaded) {
+    try { sessionStorage.setItem('aikaReloaded', '1'); } catch (e) {}
+    location.replace(location.origin + location.pathname + '?v=33&r=' + Date.now());
+  }
+}
 resize();
 makeTextures();
 genWorld(seed);

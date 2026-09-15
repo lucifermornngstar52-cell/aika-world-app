@@ -27,6 +27,7 @@ public class MainActivity extends Activity {
     st.setJavaScriptEnabled(true);
     st.setDomStorageEnabled(true);
     st.setLoadWithOverviewMode(true);
+    st.setCacheMode(WebSettings.LOAD_NO_CACHE); // всегда свежая версия игры
     st.setUseWideViewPort(true);
     web.setWebViewClient(new WebViewClient() {
       @Override
