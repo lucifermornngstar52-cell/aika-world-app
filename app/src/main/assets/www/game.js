@@ -27,7 +27,8 @@ let pendingBuild = null;   // { kind:'hut'|'farm', x, y, assigned }
 let settlersThresholds = [30, 70, 130, 220, 340];
 let settlersSpawned = 0;
 let simTime = 0;
-let simSpeed = 1, paused = false, inMenu = true;
+let simSpeed = 1, paused = false, inMenu = true, menuScene = true;
+let worldId = null, worldName = '';
 let seed = (Date.now() % 2147483647) | 0;
 let rng = null;
 let camX = 0, camY = 0, zoom = 1.6;
@@ -607,24 +608,113 @@ const TRAITS = [
   { k: 'kind', label: 'добрый' }
 ];
 const THOUGHTS = {
-  chop: ['Дерево само себя не срубит.', 'Тук-тук-тук… делу время.', 'Настрою дров на всю деревню!', 'Хорошая древесина, крепкая.'],
-  forage: ['Ягодки, сладкие как мёд!', 'Вот и кустик со спелыми ягодами.', 'Соберу-ка ягод на всех.'],
-  harvest: ['Пшеница созрела, урожай!', 'Хлеб будет!', 'Урожай удался на славу.'],
-  eat: ['Ням… вот теперь можно и поработать.', 'Какая вкуснотища!', 'Сытый житель — счастливый житель.'],
-  sleep: ['Какая звёздная ночь…', 'Спать-спать-спать…', 'Завтра будет новый день.', 'Дым костра убаюкивает…'],
-  social: ['Сто лет не виделись!', 'Слышал, скоро новый дом строим?', 'Болтать у костра — лучшее время.'],
-  deposit: ['Вклад в общее дело!', 'Дрова в общую кучу — так честно.'],
-  wander: ['Пойду посмотрю, что там.', 'Интересно, что за холмом?', 'Прогулка ещё никому не мешала.', 'Мир большой, надо всё обойти.'],
-  idle: ['Сегодня хороший день.', 'Чем бы заняться?', 'Птички поют… красота.'],
-  craft: ['Нужен топор — сделаю топор.', 'Хороший инструмент — половина дела.', 'Из камня и палки выйдет орудие!'],
-  mine: ['Камень — основа всех орудий.', 'Тяжёлый, но очень нужный.', 'Осторожно, пальцы!'],
-  fight: ['За деревню!', 'А ну, тварь, отступай!', 'Не сегодня, слайма!', 'Костром клянусь, ты не пройдёшь!'],
-  flee: ['Спасайся кто может!', 'Отступаем!', 'Надо в укрытие!'],
-  hunt: ['Тише… кролик близко.', 'Ужин сам бежит в руки.'],
-  greet: ['Новый человек! Надо познакомиться.', 'О, к нам пополнение!'],
-  nightDream: ['Что там, за туманом?..', 'Звёзды… интересно, из чего они?'],
-  child: ['Когда я вырасту, стану строителем!', 'Ух, большой мир!', 'Мама сказала не уходить далеко…']
+  chop: ['Дерево само себя не срубит.', 'Тук-тук-тук… делу время.', 'Настрою дров на всю деревню!', 'Хорошая древесина, крепкая.',
+    'Это дерево помнит ещё моего деда.', 'Ещё пара ударов — и готово.', 'Топор тупеет, а лес — нет.', 'Считаю: раз… два… ещё раз!',
+    'Слушай, как гулко!', 'Дымом потом пахнуть будет — уют.', 'Лес густой, работы на месяц.', 'Ух, сучок попался упрямый.'],
+  forage: ['Ягодки, сладкие как мёд!', 'Вот и кустик со спелыми ягодами.', 'Соберу-ка ягод на всех.',
+    'Тёмные — самые сладкие, знаю.', 'Осторожно, ветки царапаются.', 'Птицы тоже сюда летят, конкурент.', 'Одну себе, остальные — в общий котёл.',
+    'Кустик почти пустой, кто-то опередил.', 'Руки уже фиолетовые.', 'Тише идёшь — больше соберёшь.'],
+  harvest: ['Пшеница созрела, урожай!', 'Хлеб будет!', 'Урожай удался на славу.', 'Колос к колосу — зима не страшна.',
+    'Пахнет хлебом уже сейчас.', 'Жнецы мы нынче.', 'Снопы сами в руки просятся.'],
+  eat: ['Ням… вот теперь можно и поработать.', 'Какая вкуснотища!', 'Сытый житель — счастливый житель.',
+    'Ягоды — это хорошо, а вот мясо бы…', 'Ем — значит живу.', 'Косточка в зубах, а всё равно вкусно.', 'Не спеша, с чувством.',
+    'Кажется, я недоедаю. Или мне кажется.', 'Вкуснее только чужая порция.', 'Ещё немного — и можно копать.'],
+  sleep: ['Какая звёздная ночь…', 'Спать-спать-спать…', 'Завтра будет новый день.', 'Дым костра убаюкивает…',
+    'Храп соседа громче волка.', 'Завтра встану до рассвета. Наверное.', 'Сон — маленькая смерть, а потом утро.', 'Спина болит, солома жесткая.',
+    'Даже слаймы, наверное, спят.', 'Считаю слаймов… нет, лучше овец.', 'Тихо… только сверчки.', 'Кто там ходит?.. да нет, ветер.'],
+  social: ['Сто лет не виделись!', 'Слышал, скоро новый дом строим?', 'Болтать у костра — лучшее время.',
+    'А мне вчера такое приснилось…', 'Ну и как тебе новый камень?', 'Ты слышал? Волки опять у реки.', 'Сплетни — тоже работа.',
+    'Только между нами…', 'Твоя кирка-то тупая, гляди.', 'Старики говорили, раньше трава была зеленее.', 'Сядь, расскажу про звёзды.',
+    'А ты почему не спишь?'],
+  deposit: ['Вклад в общее дело!', 'Дрова в общую кучу — так честно.', 'Склад пополнился — деревня дышит.',
+    'Чтоб до зимы хватило.', 'Общее добро — оно такое.', 'Кто последний, тот и носил, ха.'],
+  wander: ['Пойду посмотрю, что там.', 'Интересно, что за холмом?', 'Прогулка ещё никому не мешала.', 'Мир большой, надо всё обойти.',
+    'Что-то там блеснуло…', 'Ноги сами ведут.', 'Земля под ногами — и та чужая, незнакомая.', 'Проверю, далеко ли вода.',
+    'Ходить — самое честное дело.', 'Тропинку бы тут протоптать.', 'Кажется, я тут уже был. Или нет?'],
+  idle: ['Сегодня хороший день.', 'Чем бы заняться?', 'Птички поют… красота.', 'Погода — само счастье.',
+    'Посижу, мир посмотрю.', 'Ветер в траве шуршит…', 'Лениво, как кролик на солнце.', 'Топор бы наточить… потом.',
+    'Облако на мамонта похоже.', 'Тихий день — хороший день.', 'Надо бы камень посчитать. Или не надо.',
+    'Дым от костра ровный — к удаче.', 'Пятки чешутся — к дороге.', 'Интересно, куда уходит река.'],
+  craft: ['Нужен топор — сделаю топор.', 'Хороший инструмент — половина дела.', 'Из камня и палки выйдет орудие!',
+    'Камень требует терпения.', 'Сколько ни бей — сядет как надо.', 'Нож по пальцам — топор по бревну.', 'Геология — вторая натура.',
+    'Вот это — изделие!', 'Вершина инженерной мысли… по местным меркам.'],
+  mine: ['Камень — основа всех орудий.', 'Тяжёлый, но очень нужный.', 'Осторожно, пальцы!',
+    'Карьер — наш хлеб… ну, камень.', 'Гранит! То-то будет скол.', 'Звон хороший — значит, крепкий.', 'Глубже — камень крепче.',
+    'Комары тут наглые, как хозяева.', 'Ух, бахнул!','Пыль в глаза, а работа в радость.'],
+  fight: ['За деревню!', 'А ну, тварь, отступай!', 'Не сегодня, слайма!', 'Костром клянусь, ты не пройдёшь!',
+    'Их тут несколько… ну и пусть!', 'Копьё, не подведи!', 'Смотрите, как надо!', 'Ты желе желейное!', 'Кыш отсюда!',
+    'За детей и за костёр!', 'Мне не страшно. Почти.'],
+  flee: ['Спасайся кто может!', 'Отступаем!', 'Надо в укрытие!', 'Живым — значит, воюющим!', 'Не догонишь, студень!',
+    'Костёр, укрой нас!', 'Бежать умею — не впервой!', 'Животное спасается умное.'],
+  hunt: ['Тише… кролик близко.', 'Ужин сам бежит в руки.', 'Кролик, я всё вижу.', 'Ушки торчат — не спрячешься.',
+    'Терпение… терпение…', 'Ты бы ещё прыжок сделал, беглец.'],
+  greet: ['Новый человек! Надо познакомиться.', 'О, к нам пополнение!', 'Свежие руки — свежие дела.',
+    'Наконец-то новые сплетни!', 'Стой, ты кто такой?', 'Путь долог? Присядь к костру.'],
+  nightDream: ['Что там, за туманом?..', 'Звёзды… интересно, из чего они?', 'Если слаймы живут, то и драконы могут.',
+    'Вот бы дом до неба…', 'Небо как шкура зверя, только дырявая.', 'Мне снилось море. Я его и не видел никогда.',
+    'Слаймы из луны капают, точно вам говорю.', 'А вдруг мы не одни в мире?', 'Завтра придумаю колесо.', 'Луна — это чей-то костёр.',
+    'Сны снятся только тем, кто спит на спине.'],
+  child: ['Когда я вырасту, стану строителем!', 'Ух, большой мир!', 'Мама сказала не уходить далеко…',
+    'А слаймов можно дрессировать?', 'Я тоже так умею! Почти.', 'Дайте мне топор! Ну пожа-а-алуйста!', 'Кролик — мой друг. Вчера.',
+    'Взрослые всё время что-то рубят. Скучно.', 'Я нашёл жука! Теперь он мой.', 'Считаю до ста… сбился.']
 };
+
+// мысли по характерам — у каждого типа свой голос
+const TRAIT_THOUGHTS = {
+  hardworking: {
+    chop: ['Даже отдыхая, я думаю о дровах.', 'Работа не волк… волк — в лесу, а работа — тут.'],
+    mine: ['Ещё один камень — и можно не волноваться о зиме.', 'Труд — это честно.'],
+    deposit: ['Склад полнее — сон крепче.', 'Порядок в куче — порядок в голове.'],
+    idle: ['Стоять без дела — мучение.', 'Так и тянет что-нибудь починить.']
+  },
+  brave: {
+    fight: ['Наконец-то настоящее дело!', 'Одно копьё — сто слаймов!', 'Не отступлю ни шагу!'],
+    flee: ['Я не бегу — я тактически отвлекаю!', 'Прикрою вас, бегите!'],
+    nightDream: ['Вот бы слайм побольше — было бы интересно.', 'Храбрость — это когда страшно, но идёшь.'],
+    idle: ['Слишком тихо. Не доверяю я этой тишине.']
+  },
+  sociable: {
+    social: ['Говорить — моя стихия!', 'Слушай, у меня столько новостей!', 'Давай болтать до рассвета?'],
+    greet: ['Расскажи всё-всё-всё о себе!', 'Сводить знакомство надо правильно: у костра!'],
+    idle: ['Скучно без разговора.', 'Кто бы пришёл поболтать…']
+  },
+  curious: {
+    wander: ['А что если за той горой — другой мир?', 'Надо всё осмотреть и потрогать!'],
+    mine: ['Интересно, а глубоко камень другого цвета?', 'Что если копать до центра земли?'],
+    nightDream: ['Из чего сделаны слаймы? Надо бы поймать и изучить.', 'Кто-то же придумал каменные дома. Значит, и я смогу.'],
+    idle: ['Земля тут другого оттенка… хм.', 'А кролики как видят в темноте?']
+  },
+  dreamer: {
+    sleep: ['Луна подмигнула мне, кажется…', 'Сны — это бесплатно, а красиво.'],
+    nightDream: ['Когда-нибудь мы построим город до звёзд.', 'Я вижу эту долину цветущей. Вижу!'],
+    wander: ['Красиво тут… как в сказке, которую сам сочинил.'],
+    idle: ['Вот бы дождь из ягод…', 'Ветер что-то шепчет. Надо вслушаться.']
+  },
+  kind: {
+    eat: ['Как хорошо, когда все сыты.', 'Отдам половину малышне, если попросят.'],
+    social: ['Как твои дела? Честно спрашиваю.', 'Тебе помочь? Мне не сложно.'],
+    greet: ['Ночёвка у костра, еда — за мной!', 'Устал с дороги? Отдохни, я подежурю.'],
+    flee: ['Сначала дети, потом я!', 'Помогите раненым, я подержу слайма!']
+  }
+};
+
+// споры у костра — два взгляда на жизнь
+const DISPUTES = [
+  { a: 'Копать надо глубже — камень внизу крепче', b: 'Камень на поверхности лежит, зачем упарываться' },
+  { a: 'Забор от слаймов обязателен', b: 'Дым костра их сам отпугивает, забор — трата дров' },
+  { a: 'Детей ремеслу учить надо с трёх лет', b: 'Пусть сначала в игры играют, детство одно' },
+  { a: 'Ягоды с северных кустов слаще', b: 'Все ягоды одинаковые, ты просто капризный' },
+  { a: 'Новый дом ставить ближе к воде', b: 'Ближе к лесу — дрова важнее' },
+  { a: 'Ночью дежурить надо по очереди', b: 'Все спать, слаймы к утру сами растают' },
+  { a: 'Топор — главное изобретение человека', b: 'Копьё! Без копья ты слайму просто обед' },
+  { a: 'Пшеницу сажать в три ряда', b: 'В четыре, места на поле хватит' },
+  { a: 'Звёзды — это дырки в небе', b: 'Звёзды — костры великанов, очевидно' },
+  { a: 'Волк опаснее слайма', b: 'Слайм хлеще: волк хоть убегает' },
+  { a: 'Дождь — к удаче', b: 'К сырости и гнили в шалаше, вот к чему' },
+  { a: 'Спать на земле полезно для спины', b: 'Вот поэтому ты с утра злюка' },
+  { a: 'Малышей надо называть по их делам', b: 'По деду называть, так заведено испокон' },
+  { a: 'Костёр нужно переносить на гору', b: 'В низине он теплее, все знают' }
+];
 
 function makeVillager(x, y) {
   const bodyIdx = Math.floor(rng() * spr.bodies.length);
@@ -822,7 +912,7 @@ function decide(v) {
   const t = stocks.wood < 400 ? findNearestObj(v, ['tree', 'pine']) : null;
   if (t && !night) { startChop(v, t); return; }
   if (!t && !night && stocks.wood >= 400 && rng() < 0.2) think(v, 'Дров на складе выше крыши — можно и отдохнуть.');
-  if (night && hasTrait(v, 'dreamer') && rng() < 0.5) { think(v, pick(THOUGHTS.nightDream)); startWander(v); return; }
+  if (night && hasTrait(v, 'dreamer') && rng() < 0.5) { think(v, pickThought(v, 'nightDream')); startWander(v); return; }
   startWander(v);
 }
 function decideChild(v, night, n) {
@@ -831,46 +921,56 @@ function decideChild(v, night, n) {
   if (v.carry.berries > 0) { startDeposit(v); return; }
   const b = findNearestObj(v, ['bush']);
   if (b && !night) { startForage(v, b); return; }
-  if (rng() < 0.3) think(v, pick(THOUGHTS.child));
+  if (rng() < 0.3) think(v, pickThought(v, 'child'));
   startWander(v);
 }
 function pick(arr) { return arr[Math.floor(rng() * arr.length)]; }
+function pickThought(v, key) {
+  const base = THOUGHTS[key];
+  if (v && v.traits && rng() < 0.4) {
+    for (const t of v.traits) {
+      const pool = (TRAIT_THOUGHTS[t.k] || {})[key];
+      if (pool) return pick(pool);
+    }
+  }
+  return base ? pick(base) : '…';
+}
 
 function startChop(v, o) {
   if (!gotoObj(v, o)) { startWander(v); return; }
   v.state = 'goto_chop'; v.targetObj = o;
-  think(v, pick(THOUGHTS.chop));
+  think(v, pickThought(v, 'chop'));
 }
 function startForage(v, o) {
   if (!gotoObj(v, o)) { startWander(v); return; }
   v.state = 'goto_forage'; v.targetObj = o;
-  think(v, pick(THOUGHTS.forage));
+  think(v, pickThought(v, 'forage'));
 }
 function startHarvest(v, o) {
   if (!gotoObj(v, o)) { startWander(v); return; }
   v.state = 'goto_harvest'; v.targetObj = o;
-  think(v, pick(THOUGHTS.harvest));
+  think(v, pickThought(v, 'harvest'));
 }
 function startHunt(v, a) {
   v.state = 'hunt'; v.huntId = a.id; v.workT = 12;
-  think(v, pick(THOUGHTS.hunt));
+  think(v, pickThought(v, 'hunt'));
 }
 function startMine(v, o) {
   if (!gotoObj(v, o)) { startWander(v); return; }
   v.state = 'goto_mine'; v.targetObj = o;
-  think(v, pick(THOUGHTS.mine));
+  think(v, pickThought(v, 'mine'));
 }
 function startCraft(v, kind) {
   const t = approachTile(v, campfire.x, campfire.y) || { x: campfire.x, y: campfire.y + 1 };
   v.path = astar(v.x, v.y, t.x, t.y); v.pathIdx = 0;
   v.state = 'goto_craft'; v.craftKind = kind;
-  think(v, pick(THOUGHTS.craft));
+  think(v, pickThought(v, 'craft'));
 }
 function startDeposit(v) {
   const t = approachTile(v, campfire.x, campfire.y) || { x: campfire.x, y: campfire.y + 1 };
   v.path = astar(v.x, v.y, t.x, t.y); v.pathIdx = 0;
   v.state = 'goto_deposit';
-  think(v, pick(THOUGHTS.deposit));
+  think(v, pickThought(v, 'deposit'));
 }
 function startEat(v) {
   if (stocks.berries > 0) {
@@ -893,25 +993,25 @@ function startSleep(v) {
   const t = approachTile(v, home.x, home.y) || { x: home.x, y: home.y + 1 };
   v.path = astar(v.x, v.y, t.x, t.y); v.pathIdx = 0;
   v.state = 'goto_sleep';
-  think(v, pick(THOUGHTS.sleep));
+  think(v, pickThought(v, 'sleep'));
 }
 function startSocial(v, partner) {
   v.state = 'goto_social'; v.targetVil = partner;
   if (partner.state === 'idle' || partner.state === 'wander') {
     partner.state = 'goto_social'; partner.targetVil = v;
   }
-  think(v, pick(THOUGHTS.social));
+  think(v, pickThought(v, 'social'));
 }
 function startWander(v) {
   for (let tries = 0; tries < 10; tries++) {
     const x = Math.floor(v.x + (rng() * 21) - 10), y = Math.floor(v.y + (rng() * 21) - 10);
     if (walkable(x, y)) {
       const p = astar(v.x, v.y, x, y);
-      if (p) { v.path = p; v.pathIdx = 0; v.state = 'wander'; think(v, pick(THOUGHTS.wander)); return; }
+      if (p) { v.path = p; v.pathIdx = 0; v.state = 'wander'; think(v, pickThought(v, 'wander')); return; }
     }
   }
   v.state = 'idle'; v.decideT = 1 + rng() * 2;
-  if (rng() < 0.4) think(v, pick(THOUGHTS.idle));
+  if (rng() < 0.4) think(v, pickThought(v, 'idle'));
 }
 function startBuild(v) {
   pendingBuild.assigned = v;
@@ -921,14 +1021,14 @@ function startBuild(v) {
 }
 function startFight(v, m) {
   v.state = 'fight'; v.fightId = m.id; v.repathT = 0;
-  think(v, pick(THOUGHTS.fight));
+  think(v, pickThought(v, 'fight'));
 }
 function startFlee(v) {
   const hm = homes(); const home = hm.length ? hm[v.id % hm.length] : campfire;
   const t = approachTile(v, home.x, home.y) || { x: home.x, y: home.y + 1 };
   v.path = astar(v.x, v.y, t.x, t.y); v.pathIdx = 0;
   v.state = 'flee';
-  think(v, pick(THOUGHTS.flee));
+  think(v, pickThought(v, 'flee'));
 }
 function nearestAnimal(v, kind, range) {
   let best = null, bd = range * range;
@@ -1005,7 +1105,7 @@ function onNightfall() {
   const day = Math.floor(simTime / DAY_LEN) + 1;
   if (day < 3) {
     logEvent('🌙', 'Ночь спокойная… пока.');
-    for (const v of villagers) if (hasTrait(v, 'dreamer')) think(v, pick(THOUGHTS.nightDream));
+    for (const v of villagers) if (hasTrait(v, 'dreamer')) think(v, pickThought(v, 'nightDream'));
     return;
   }
   const count = Math.min(3, Math.ceil(villagers.length / 4) + (day > 6 ? 1 : 0));
@@ -1021,7 +1121,7 @@ function onNightfall() {
   logEvent('👾', `Ночь. Из тьмы выползли слаймы (${count})!`);
   if (rng() < 0.4) logEvent('🐺', 'Волки воют в лесу…');
   for (const v of villagers)
-    if (hasTrait(v, 'dreamer') && v.state !== 'sleep') think(v, pick(THOUGHTS.nightDream));
+    if (hasTrait(v, 'dreamer') && v.state !== 'sleep') think(v, pickThought(v, 'nightDream'));
 }
 
 function onMorning() {
@@ -1079,7 +1179,7 @@ function arriveSettler() {
     logEvent('🎉', `${nv.name} пришёл в деревню! Теперь нас ${villagers.length}.`);
     settlersSpawned++;
     for (const v of villagers)
-      if (v !== nv && hasTrait(v, 'curious')) think(v, pick(THOUGHTS.greet));
+      if (v !== nv && hasTrait(v, 'curious')) think(v, pickThought(v, 'greet'));
   }
 }
 
@@ -1360,7 +1460,7 @@ function updateVillager(v, dt) {
             v.eatIntent = false;
             v.carry.berries = Math.max(0, v.carry.berries - 1);
             v.needs.hunger = Math.min(100, v.needs.hunger + 45);
-            think(v, pick(THOUGHTS.eat));
+            think(v, pickThought(v, 'eat'));
           }
           logEvent('🍓', `${v.name} собрал ягоды (+2 🫐)`);
         }
@@ -1520,7 +1620,7 @@ function updateVillager(v, dt) {
         stocks.berries--;
         v.needs.hunger = Math.min(100, v.needs.hunger + 55);
         v.state = 'eat'; v.workT = 2;
-        think(v, pick(THOUGHTS.eat));
+        think(v, pickThought(v, 'eat'));
       } else { v.state = 'idle'; v.decideT = 0.3; }
       break;
     }
@@ -1531,7 +1631,7 @@ function updateVillager(v, dt) {
     }
     case 'goto_sleep': {
       v.state = 'sleep';
-      think(v, pick(THOUGHTS.sleep));
+      think(v, pickThought(v, 'sleep'));
       break;
     }
     case 'goto_social': {
@@ -1546,7 +1646,7 @@ function updateVillager(v, dt) {
       }
       v.state = 'social'; v.workT = 3; v.socialWith = other.id;
       if (other.state !== 'social' && other.state !== 'goto_social') {
-        other.state = 'social'; other.workT = 3; other.socialWith = v.id; think(other, pick(THOUGHTS.social));
+        other.state = 'social'; other.workT = 3; other.socialWith = v.id; think(other, pickThought(other, 'social'));
       }
       break;
     }
@@ -1556,7 +1656,12 @@ function updateVillager(v, dt) {
         v.needs.social = 100;
         const other = villagers.find(o => o.id === v.socialWith);
         if (other && other.state === 'social') { other.needs.social = 100; other.state = 'idle'; other.decideT = 1; }
-        if (rng() < 0.5) logEvent('💬', `${v.name} и ${other ? other.name : 'кто-то'} поболтали у костра`);
+        if (other && other.state === 'social' && rng() < 0.25) {
+          const d = pick(DISPUTES);
+          logEvent('💬', `${v.name} и ${other.name} заспорили: «${d.a}!» — «Нет же: ${d.b}!»`);
+          think(v, d.a + '.');
+          think(other, d.b + '.');
+        } else if (rng() < 0.45) logEvent('💬', `${v.name} и ${other ? other.name : 'кто-то'} поболтали у костра`);
         v.state = 'idle'; v.decideT = 1;
       }
       break;
@@ -1669,7 +1774,91 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 
+const menuStars = Array.from({ length: 110 }, (_, i) => ({ x: Math.random(), y: Math.random() * 0.62, p: Math.random() * 6.28 }));
+function drawMenuScene() {
+  const t = performance.now() / 1000;
+  // небо
+  const g = ctx.createLinearGradient(0, 0, 0, ch);
+  g.addColorStop(0, '#070b1c'); g.addColorStop(0.65, '#121a36'); g.addColorStop(1, '#1a2340');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, cw, ch);
+  // звёзды мерцают
+  for (const s of menuStars) {
+    const a = 0.3 + 0.7 * Math.abs(Math.sin(t * 0.7 + s.p));
+    ctx.fillStyle = 'rgba(220,228,255,' + a.toFixed(2) + ')';
+    ctx.fillRect(s.x * cw, s.y * ch, 2, 2);
+  }
+  // луна с кратерами
+  ctx.fillStyle = '#e8e4d0'; ctx.beginPath(); ctx.arc(cw * 0.84, ch * 0.17, Math.min(30, ch * 0.045), 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(160,160,150,0.5)';
+  ctx.beginPath(); ctx.arc(cw * 0.85, ch * 0.15, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cw * 0.82, ch * 0.19, 3, 0, Math.PI * 2); ctx.fill();
+  // дальние холмы
+  ctx.fillStyle = '#0c1129';
+  ctx.beginPath(); ctx.moveTo(0, ch * 0.8);
+  ctx.quadraticCurveTo(cw * 0.25, ch * 0.6, cw * 0.5, ch * 0.78);
+  ctx.quadraticCurveTo(cw * 0.75, ch * 0.62, cw, ch * 0.8);
+  ctx.lineTo(cw, ch); ctx.lineTo(0, ch); ctx.fill();
+  // ели-силуэты
+  ctx.fillStyle = '#0a0f22';
+  for (let i = 0; i < 14; i++) {
+    const ex = (i / 13) * cw + Math.sin(i * 3.7) * 14;
+    const eh = ch * (0.1 + 0.05 * Math.abs(Math.sin(i * 1.3)));
+    const ey = ch * 0.78;
+    ctx.beginPath(); ctx.moveTo(ex, ey - eh);
+    ctx.lineTo(ex + eh * 0.34, ey); ctx.lineTo(ex - eh * 0.34, ey); ctx.fill();
+  }
+  // земля
+  ctx.fillStyle = '#101d0e'; ctx.fillRect(0, ch * 0.78, cw, ch * 0.22);
+  ctx.fillStyle = '#152610'; ctx.fillRect(0, ch * 0.78, cw, 3);
+  // костёр по центру
+  const fx = cw / 2, fy = ch * 0.78 + 18;
+  ctx.fillStyle = 'rgba(255,150,50,0.07)';
+  ctx.beginPath(); ctx.arc(fx, fy - 16, 130 + Math.sin(t * 3) * 8, 0, Math.PI * 2); ctx.fill();
+  // брёвна
+  ctx.save(); ctx.translate(fx, fy); ctx.rotate(0.45); ctx.fillStyle = '#5c3d22'; ctx.fillRect(-34, -5, 68, 10); ctx.restore();
+  ctx.save(); ctx.translate(fx, fy); ctx.rotate(-0.45); ctx.fillStyle = '#6b4a2b'; ctx.fillRect(-34, -5, 68, 10); ctx.restore();
+  // пламя в три слоя
+  const f1 = Math.sin(t * 9) * 3, f2 = Math.sin(t * 13 + 1) * 2;
+  ctx.fillStyle = '#ff7b1c';
+  ctx.beginPath(); ctx.moveTo(fx - 17, fy);
+  ctx.quadraticCurveTo(fx - 12 + f1, fy - 42, fx + f1 * 0.6, fy - 52);
+  ctx.quadraticCurveTo(fx + 13 + f1, fy - 34, fx + 17, fy); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#ffb52e';
+  ctx.beginPath(); ctx.moveTo(fx - 11, fy);
+  ctx.quadraticCurveTo(fx - 7 + f2, fy - 28, fx + f2 * 0.5, fy - 36);
+  ctx.quadraticCurveTo(fx + 9 + f2, fy - 22, fx + 11, fy); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#ffe58a';
+  ctx.beginPath(); ctx.moveTo(fx - 6, fy);
+  ctx.quadraticCurveTo(fx - 3 + f2, fy - 14, fx + f2 * 0.4, fy - 20);
+  ctx.quadraticCurveTo(fx + 5 + f2, fy - 10, fx + 6, fy); ctx.closePath(); ctx.fill();
+  // искры и дым
+  for (let i = 0; i < 7; i++) {
+    const ph = (t * 0.35 + i / 7) % 1;
+    ctx.fillStyle = 'rgba(255,200,90,' + (1 - ph).toFixed(2) + ')';
+    ctx.fillRect(fx + Math.sin(t * 2 + i * 2.1) * 24, fy - 55 - ph * 100, 3, 3);
+  }
+  for (let i = 0; i < 5; i++) {
+    const ph = (t * 0.12 + i / 5) % 1;
+    ctx.fillStyle = 'rgba(180,190,210,' + (0.25 * (1 - ph)).toFixed(2) + ')';
+    ctx.beginPath(); ctx.arc(fx + Math.sin(t * 0.8 + i) * 30, fy - 60 - ph * 200, 8 + ph * 18, 0, Math.PI * 2); ctx.fill();
+  }
+  // светлячки
+  for (let i = 0; i < 9; i++) {
+    const a = Math.abs(Math.sin(t * 0.9 + i * 1.9));
+    ctx.fillStyle = 'rgba(180,255,140,' + (a * 0.8).toFixed(2) + ')';
+    ctx.fillRect((Math.sin(i * 5.3) * 0.4 + 0.5) * cw, ch * (0.55 + 0.2 * Math.abs(Math.sin(i * 2.7 + t * 0.3))), 3, 3);
+  }
+  // виньетка
+  const vg = ctx.createRadialGradient(cw / 2, ch / 2, ch * 0.25, cw / 2, ch / 2, ch * 0.9);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, cw, ch);
+}
 function draw() {
+  if (menuScene) drawMenuScene();
+  else drawWorld();
+}
+
+function drawWorld() {
   ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = '#0b0d14';
   ctx.fillRect(0, 0, cw, ch);
@@ -2211,11 +2400,41 @@ function loop(now) {
 }
 
 // ── Сохранение и меню ─────────────────────────────────────────────
-const SAVE_KEY = 'aikaWorldSave';
+const WORLDS_KEY = 'aikaWorlds';
+const WN_ADJ = ['Тихая', 'Ясная', 'Старая', 'Сосновая', 'Медная', 'Белая', 'Дальняя', 'Зелёная', 'Каменная', 'Смолистая', 'Туманная', 'Соловьиная'];
+const WN_NOUN = ['Долина', 'Поляна', 'Грива', 'Дубрава', 'Росстань', 'Слобода', 'Заречье', 'Опушка', 'Пустошь', 'Выселки', 'Мыза', 'Кряж'];
+function worldsRegistry() {
+  try { return JSON.parse(localStorage.getItem(WORLDS_KEY) || '[]'); } catch (e) { return []; }
+}
+function saveRegistry(list) {
+  try { localStorage.setItem(WORLDS_KEY, JSON.stringify(list)); } catch (e) {}
+}
+function migrateLegacySave() {
+  try {
+    const old = localStorage.getItem('aikaWorldSave');
+    if (old && !localStorage.getItem('aikaWorld_legacy')) {
+      localStorage.setItem('aikaWorld_legacy', old);
+      localStorage.removeItem('aikaWorldSave');
+      const d = JSON.parse(old);
+      const objs = d.objects || [];
+      const sh = objs.filter(o => o.t === 'shelter').length;
+      const hu = objs.filter(o => o.t === 'hut').length;
+      const ho = objs.filter(o => o.t === 'house').length;
+      const eraN = ho > 0 ? 4 : hu > 0 ? 3 : sh > 0 ? 2 : 1;
+      const reg = worldsRegistry();
+      reg.push({ id: 'legacy', name: 'Старый мир', day: Math.floor((d.simTime || 0) / 240), era: eraN, pop: (d.villagers || []).length, at: 0 });
+      saveRegistry(reg);
+    }
+  } catch (e) {}
+}
 function saveGame() {
   try {
+    if (worldId == null) {
+      worldId = Date.now().toString(36) + Math.floor(rng() * 999);
+      worldName = WN_ADJ[Math.floor(rng() * WN_ADJ.length)] + ' ' + WN_NOUN[Math.floor(rng() * WN_NOUN.length)];
+    }
     const data = {
-      v: 1, seed, simTime,
+      v: 2, seed, simTime, worldName,
       stocks: { ...stocks },
       sim: { ...SIM },
       weather: { rain: weather.rain, t: weather.t },
@@ -2230,15 +2449,18 @@ function saveGame() {
         nd: { ...v.needs }, tr: v.traits.slice(), sk: { ...v.skill }
       }))
     };
-    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    localStorage.setItem('aikaWorld_' + worldId, JSON.stringify(data));
+    const reg = worldsRegistry();
+    const entry = { id: worldId, name: worldName, day: Math.floor(simTime / DAY_LEN), era: era(), pop: villagers.length, at: Date.now() };
+    const i = reg.findIndex(r => r.id === worldId);
+    if (i >= 0) reg[i] = entry; else reg.push(entry);
+    saveRegistry(reg);
   } catch (e) {}
 }
-function loadGame() {
-  let raw = null;
-  try { raw = localStorage.getItem(SAVE_KEY); } catch (e) {}
-  if (!raw) return false;
+function restoreWorld(raw) {
   try {
     const d = JSON.parse(raw);
+    seed = d.seed;
     genWorld(d.seed);
     objects.length = 0; objAt.clear(); huts.length = 0; farms.length = 0;
     monsters.length = 0; villagers.length = 0; regrowQueue.length = 0;
@@ -2275,32 +2497,56 @@ function loadGame() {
     return true;
   } catch (e) { console.error('Ошибка загрузки:', e); return false; }
 }
+function loadWorld(id) {
+  let raw = null;
+  try { raw = localStorage.getItem('aikaWorld_' + id); } catch (e) {}
+  if (!raw) return false;
+  worldId = id;
+  const meta = worldsRegistry().find(r => r.id === id);
+  worldName = meta ? meta.name : 'Мир';
+  return restoreWorld(raw);
+}
+function openWorld(id) {
+  if (loadWorld(id)) {
+    inMenu = false; menuScene = false;
+    document.getElementById('mainMenu').style.display = 'none';
+  } else {
+    deleteWorld(id);
+  }
+}
+function deleteWorld(id) {
+  try {
+    localStorage.removeItem('aikaWorld_' + id);
+    saveRegistry(worldsRegistry().filter(r => r.id !== id));
+  } catch (e) {}
+  showMainMenu();
+}
 function showMainMenu() {
-  inMenu = true;
-  let hasSave = false;
-  try { hasSave = !!localStorage.getItem(SAVE_KEY); } catch (e) {}
-  document.getElementById('btnContinue').style.display = hasSave ? 'block' : 'none';
+  inMenu = true; menuScene = true;
+  migrateLegacySave();
+  const reg = worldsRegistry().sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 12);
+  let html = '';
+  for (const w of reg) {
+    const er = ERAS[w.era] || 'Древний лагерь';
+    html += '<div class="world-row"><button class="world-open" onclick="openWorld(\'' + w.id + '\')"><b>' + w.name + '</b><span class="world-meta">' + er + ' · день ' + w.day + ' · ' + w.pop + ' чел.</span></button><button class="world-del" onclick="deleteWorld(\'' + w.id + '\')">🗑</button></div>';
+  }
+  if (!html) html = '<div class="world-empty">Сохранённых миров нет — создай первый!</div>';
+  document.getElementById('worldsList').innerHTML = html;
   document.getElementById('mainMenu').style.display = 'flex';
   document.getElementById('pauseMenu').style.display = 'none';
   document.getElementById('intro').style.display = 'none';
 }
 function startNewGame() {
   seed = Math.floor(Math.random() * 1000000000);
+  worldId = null; worldName = '';
   genWorld(seed);
   chronicleEl.innerHTML = '';
   logEvent('🌱', `Мир сгенерирован из сида ${seed}. Каждый мир уникален.`);
   logEvent('🔥', 'Двое древних людей разожгли костёр. Начало великого пути!');
   focusVillage();
-  inMenu = false;
+  inMenu = false; menuScene = false;
   document.getElementById('mainMenu').style.display = 'none';
   document.getElementById('intro').style.display = 'flex';
-  try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
-}
-function continueGame() {
-  if (loadGame()) {
-    inMenu = false;
-    document.getElementById('mainMenu').style.display = 'none';
-  } else startNewGame();
 }
 function showPauseMenu() {
   saveGame();
@@ -2318,7 +2564,6 @@ document.getElementById('btnToMenu').onclick = () => {
   showMainMenu();
 };
 document.getElementById('btnNewGame').onclick = startNewGame;
-document.getElementById('btnContinue').onclick = continueGame;
 document.addEventListener('visibilitychange', () => { if (document.hidden) saveGame(); });
 window.addEventListener('pagehide', () => saveGame());
 

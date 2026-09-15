@@ -78,7 +78,20 @@
     font-weight: 700; cursor: pointer; }
   #btnIntro:active { opacity: 0.85; }
   #mainMenu, #pauseMenu { position: fixed; inset: 0; z-index: 60; display: flex;
-    align-items: center; justify-content: center; background: rgba(8,10,20,0.62); }
+    align-items: center; justify-content: center; background: rgba(8,10,20,0.18); }
+  .scene-title { font-size: 30px; font-weight: 900; letter-spacing: 4px; color: #fff;
+    text-shadow: 0 0 24px rgba(255,150,50,0.5); text-align: center; }
+  .scene-sub { color: #b8c0dd; font-size: 13px; margin: 8px 0 4px; text-align: center; }
+  #worldsList { max-height: 44vh; overflow-y: auto; width: 100%; margin: 14px 0 4px; }
+  .world-row { display: flex; align-items: center; gap: 8px;
+    background: rgba(124,140,255,0.09); border: 1px solid rgba(124,140,255,0.28);
+    border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
+  .world-open { flex: 1; text-align: left; background: none; border: none;
+    color: #e8ecff; cursor: pointer; font-size: 14px; padding: 0; }
+  .world-open b { display: block; font-size: 15px; margin-bottom: 2px; }
+  .world-meta { color: #9aa4c0; font-size: 11.5px; }
+  .world-del { background: none; border: none; cursor: pointer; font-size: 16px; opacity: 0.65; }
+  .world-empty { color: #8b93ad; font-size: 13px; text-align: center; padding: 18px 0; }
   .menu-primary { margin-top: 10px; width: 100%; padding: 13px; border: none;
     border-radius: 12px; background: linear-gradient(135deg,#7c8cff,#5a6fe8);
     color: #fff; font-weight: 700; font-size: 15px; cursor: pointer; }
@@ -115,12 +128,12 @@
 <div id="villagerPanel"></div>
 
 <div id="mainMenu" style="display:none">
-  <div class="intro-card">
-    <div class="intro-title">🔥 АЙКА МИР</div>
-    <div class="intro-sub">Живая пиксельная деревня: от двух древних людей до каменного поселения</div>
-    <button id="btnContinue" class="menu-primary" style="display:none">▶ ПРОДОЛЖИТЬ</button>
-    <button id="btnNewGame" class="menu-primary">🔥 НОВАЯ ИГРА</button>
-    <div class="menu-foot">прогресс сохраняется каждый рассвет и при выходе</div>
+  <div class="intro-card" style="width: 340px; max-width: 92vw;">
+    <div class="scene-title">ПЕРВЫЕ ЛЮДИ</div>
+    <div class="scene-sub">каждый мир — отдельная история</div>
+    <div id="worldsList"></div>
+    <button id="btnNewGame" class="menu-primary">🔥 СОЗДАТЬ НОВЫЙ МИР</button>
+    <div class="menu-foot">сохранение каждый рассвет · миров до 12</div>
   </div>
 </div>
 
