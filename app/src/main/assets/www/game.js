@@ -27,7 +27,7 @@ let pendingBuild = null;   // { kind:'hut'|'farm', x, y, assigned }
 let settlersThresholds = [30, 70, 130, 220, 340];
 let settlersSpawned = 0;
 let simTime = 0;
-let simSpeed = 1, paused = false;
+let simSpeed = 1, paused = false, inMenu = true;
 let seed = (Date.now() % 2147483647) | 0;
 let rng = null;
 let camX = 0, camY = 0, zoom = 1.6;
@@ -1025,6 +1025,7 @@ function onNightfall() {
 }
 
 function onMorning() {
+  saveGame(); // автосохранение каждый рассвет
   // дети растут
   for (const v of [...villagers]) {
     if (v.isChild && simTime >= v.growAt) {
@@ -2077,10 +2078,10 @@ canvas.addEventListener('pointermove', e => {
 });
 let selectedObj = null;   // объект карты
 let selectedEnt = null;  // животное/монстр { list, id }
-function endPointer(e) {
-  if (pointers.has(e.pointerId) && pointers.size === 1 && dragMoved < 8) {
-    const wx = (e.clientX - cw / 2) / zoom + camX;
-    const wy = (e.clientY - ch / 2) / zoom + camY;
+function processTap(clientX, clientY) {
+  {
+    const wx = (clientX - cw / 2) / zoom + camX;
+    const wy = (clientY - ch / 2) / zoom + camY;
     let best = null, bd = 14;
     for (const v of villagers) {
       const d = Math.hypot(v.x * TILE - wx, v.y * TILE - wy);
@@ -2107,10 +2108,46 @@ function endPointer(e) {
       }
     }
   }
+}
+function endPointer(e) {
+  if (pointers.has(e.pointerId) && pointers.size === 1 && dragMoved < 8) processTap(e.clientX, e.clientY);
   pointers.delete(e.pointerId);
 }
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
+// страховка: WebView не должен красть жесты у карты
+canvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+// фолбэк для старых WebView без Pointer Events
+if (!window.PointerEvent) {
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    for (const t of e.changedTouches) pointers.set('t' + t.identifier, { x: t.clientX, y: t.clientY });
+    dragMoved = 0;
+  }, { passive: false });
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      const p = pointers.get('t' + t.identifier);
+      if (!p) continue;
+      if (pointers.size === 1) {
+        const dx = t.clientX - p.x, dy = t.clientY - p.y;
+        dragMoved += Math.abs(dx) + Math.abs(dy);
+        camX -= dx / zoom; camY -= dy / zoom;
+        clampCam();
+      }
+      p.x = t.clientX; p.y = t.clientY;
+    }
+  }, { passive: false });
+  const touchEnd = e => {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (pointers.size === 1 && dragMoved < 8) processTap(t.clientX, t.clientY);
+      pointers.delete('t' + t.identifier);
+    }
+  };
+  canvas.addEventListener('touchend', touchEnd, { passive: false });
+  canvas.addEventListener('touchcancel', touchEnd, { passive: false });
+}
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
   zoom = Math.max(0.8, Math.min(5, zoom * (e.deltaY < 0 ? 1.15 : 0.87)));
@@ -2146,7 +2183,9 @@ document.getElementById('btnFollow').onclick = () => {
 function focusVillage() {
   camX = campfire.x * TILE + 4;
   camY = campfire.y * TILE + 4;
-  zoom = Math.max(1.2, Math.min(2.5, ch / MAP_H * 1.4));
+  // на телефоне — зум ближе, чтобы деревню и людей было видно сразу
+  const smallScreen = Math.min(cw, ch) < 520;
+  zoom = smallScreen ? 2.4 : Math.max(1.6, Math.min(2.5, ch / MAP_H * 1.4));
   clampCam();
 }
 document.getElementById('btnIntro').onclick = () => {
@@ -2159,7 +2198,7 @@ let statT = 0, panelT = 0;
 function loop(now) {
   let dt = Math.min(0.1, (now - lastT) / 1000);
   lastT = now;
-  if (!paused && world) {
+  if (!paused && world && !inMenu) {
     const sdt = Math.min(0.25, dt * simSpeed);
     updateSim(sdt);
   }
@@ -2171,11 +2210,122 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
+// ── Сохранение и меню ─────────────────────────────────────────────
+const SAVE_KEY = 'aikaWorldSave';
+function saveGame() {
+  try {
+    const data = {
+      v: 1, seed, simTime,
+      stocks: { ...stocks },
+      sim: { ...SIM },
+      weather: { rain: weather.rain, t: weather.t },
+      totalWood,
+      settlers: settlersThresholds.slice(),
+      regrowQueue: regrowQueue.map(q => ({ x: q.x, y: q.y, at: q.at })),
+      objects: objects.map(o => ({ t: o.type, x: o.x, y: o.y, st: o.stage || 0, rg: o.regrowAt || 0, dp: o.depleted ? 1 : 0 })),
+      villagers: villagers.map(v => ({
+        n: v.name, bi: v.bodyIdx, x: v.x, y: v.y,
+        ch: v.isChild ? 1 : 0, gr: v.growAt,
+        hp: v.hp, tl: v.tool || null, sp: v.spear ? 1 : 0,
+        nd: { ...v.needs }, tr: v.traits.slice(), sk: { ...v.skill }
+      }))
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+  } catch (e) {}
+}
+function loadGame() {
+  let raw = null;
+  try { raw = localStorage.getItem(SAVE_KEY); } catch (e) {}
+  if (!raw) return false;
+  try {
+    const d = JSON.parse(raw);
+    genWorld(d.seed);
+    objects.length = 0; objAt.clear(); huts.length = 0; farms.length = 0;
+    monsters.length = 0; villagers.length = 0; regrowQueue.length = 0;
+    for (const o of d.objects) {
+      const real = addObject(o.t, o.x, o.y);
+      if (!real) continue;
+      if (o.st) real.stage = o.st;
+      if (o.rg) real.regrowAt = o.rg;
+      if (o.dp) real.depleted = true;
+      if (o.t === 'hut') huts.push({ x: o.x, y: o.y });
+    }
+    for (const sv of d.villagers) {
+      const v = makeVillager(sv.x, sv.y);
+      v.name = sv.n; v.bodyIdx = sv.bi; v.isChild = !!sv.ch; v.growAt = sv.gr;
+      v.hp = sv.hp; v.tool = sv.tl; v.spear = !!sv.sp;
+      v.needs = sv.nd; v.traits = sv.tr; v.skill = sv.sk;
+      v.state = 'idle'; v.path = null; v.decideT = 1;
+      villagers.push(v);
+    }
+    stocks = d.stocks;
+    Object.keys(d.sim).forEach(k => SIM[k] = d.sim[k]);
+    totalWood = d.totalWood;
+    settlersThresholds = d.settlers;
+    weather.rain = d.weather.rain; weather.t = d.weather.t;
+    d.regrowQueue.forEach(q => regrowQueue.push(q));
+    simTime = d.simTime;
+    lastPhase = phase();
+    lastEra = era();
+    pendingBuild = null;
+    selected = null; selectedObj = null; selectedEnt = null;
+    chronicleEl.innerHTML = '';
+    logEvent('▶', 'Деревня продолжает жить с того же места!');
+    focusVillage();
+    return true;
+  } catch (e) { console.error('Ошибка загрузки:', e); return false; }
+}
+function showMainMenu() {
+  inMenu = true;
+  let hasSave = false;
+  try { hasSave = !!localStorage.getItem(SAVE_KEY); } catch (e) {}
+  document.getElementById('btnContinue').style.display = hasSave ? 'block' : 'none';
+  document.getElementById('mainMenu').style.display = 'flex';
+  document.getElementById('pauseMenu').style.display = 'none';
+  document.getElementById('intro').style.display = 'none';
+}
+function startNewGame() {
+  seed = Math.floor(Math.random() * 1000000000);
+  genWorld(seed);
+  chronicleEl.innerHTML = '';
+  logEvent('🌱', `Мир сгенерирован из сида ${seed}. Каждый мир уникален.`);
+  logEvent('🔥', 'Двое древних людей разожгли костёр. Начало великого пути!');
+  focusVillage();
+  inMenu = false;
+  document.getElementById('mainMenu').style.display = 'none';
+  document.getElementById('intro').style.display = 'flex';
+  try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+}
+function continueGame() {
+  if (loadGame()) {
+    inMenu = false;
+    document.getElementById('mainMenu').style.display = 'none';
+  } else startNewGame();
+}
+function showPauseMenu() {
+  saveGame();
+  inMenu = true;
+  document.getElementById('pauseMenu').style.display = 'flex';
+}
+document.getElementById('btnMenu').onclick = showPauseMenu;
+document.getElementById('btnResume').onclick = () => {
+  inMenu = false;
+  document.getElementById('pauseMenu').style.display = 'none';
+};
+document.getElementById('btnToMenu').onclick = () => {
+  saveGame();
+  document.getElementById('pauseMenu').style.display = 'none';
+  showMainMenu();
+};
+document.getElementById('btnNewGame').onclick = startNewGame;
+document.getElementById('btnContinue').onclick = continueGame;
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveGame(); });
+window.addEventListener('pagehide', () => saveGame());
+
 // ── Старт ─────────────────────────────────────────────────────────
 resize();
 makeTextures();
 genWorld(seed);
 focusVillage();
-logEvent('🌱', `Мир сгенерирован из сида ${seed}. Каждый мир уникален.`);
-logEvent('🐺', 'В лесу живут волки и кролики. Ночью берегись слайм!');
+showMainMenu();
 requestAnimationFrame(loop);

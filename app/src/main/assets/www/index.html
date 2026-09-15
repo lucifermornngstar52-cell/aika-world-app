@@ -77,6 +77,17 @@
     background: linear-gradient(90deg, #7c6cff, #a86cff); color: white; font-size: 15px;
     font-weight: 700; cursor: pointer; }
   #btnIntro:active { opacity: 0.85; }
+  #mainMenu, #pauseMenu { position: fixed; inset: 0; z-index: 60; display: flex;
+    align-items: center; justify-content: center; background: rgba(8,10,20,0.62); }
+  .menu-primary { margin-top: 10px; width: 100%; padding: 13px; border: none;
+    border-radius: 12px; background: linear-gradient(135deg,#7c8cff,#5a6fe8);
+    color: #fff; font-weight: 700; font-size: 15px; cursor: pointer; }
+  .menu-primary:active { opacity: 0.85; }
+  .menu-secondary { margin-top: 8px; width: 100%; padding: 12px;
+    border: 1px solid rgba(124,140,255,0.4); border-radius: 12px;
+    background: rgba(124,140,255,0.08); color: #cdd4f8; font-weight: 600;
+    font-size: 14px; cursor: pointer; }
+  .menu-foot { color: #8089a6; font-size: 11px; margin-top: 12px; text-align: center; }
 
   @media (max-width: 640px) {
     #stats { font-size: 11px; padding: 6px 9px; }
@@ -96,13 +107,32 @@
     <button class="btn" id="btnZoomOut">−</button>
     <button class="btn" id="btnFollow" title="к выбранному">🧑</button>
     <button class="btn" id="btnWorld" title="новый мир">🎲</button>
+    <button class="btn" id="btnMenu" title="меню">☰</button>
   </div>
 </div>
 
 <div id="chronicle"></div>
 <div id="villagerPanel"></div>
 
-<div id="intro">
+<div id="mainMenu" style="display:none">
+  <div class="intro-card">
+    <div class="intro-title">🔥 АЙКА МИР</div>
+    <div class="intro-sub">Живая пиксельная деревня: от двух древних людей до каменного поселения</div>
+    <button id="btnContinue" class="menu-primary" style="display:none">▶ ПРОДОЛЖИТЬ</button>
+    <button id="btnNewGame" class="menu-primary">🔥 НОВАЯ ИГРА</button>
+    <div class="menu-foot">прогресс сохраняется каждый рассвет и при выходе</div>
+  </div>
+</div>
+
+<div id="pauseMenu" style="display:none">
+  <div class="intro-card">
+    <div class="intro-title" style="font-size:20px">ПАУЗА</div>
+    <button id="btnResume" class="menu-primary">▶ ПРОДОЛЖИТЬ</button>
+    <button id="btnToMenu" class="menu-secondary">💾 Сохранить и выйти в меню</button>
+  </div>
+</div>
+
+<div id="intro" style="display:none">
   <div class="intro-card">
     <div class="intro-title">АЙКА МИР</div>
     <div class="intro-sub">Живая пиксельная деревня. Мир генерируется случайно — каждый раз новый. Жители думают и развиваются сами.</div>
