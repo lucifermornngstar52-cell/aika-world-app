@@ -2055,11 +2055,50 @@ function drawVillager(v) {
       ctx.fillRect(x + i * 2, y - 4, 1.5, 1.5);
     }
   }
-  // иконки занятия
-  if (v.state === 'chop') { ctx.font = '5px sans-serif'; ctx.fillText(v.tool === 'axe' ? '🪓' : '✊', x + 8, y + 4); }
-  if (v.state === 'fight') { ctx.font = '5px sans-serif'; ctx.fillText(v.tool === 'spear' ? '🔱' : '👊', x + 8, y + 4); }
-  if (v.state === 'craft') { ctx.font = '5px sans-serif'; ctx.fillText('🔨', x + 8, y + 4); }
-  if (v.state === 'hunt') { ctx.font = '5px sans-serif'; ctx.fillText('🏹', x + 8, y + 4); }
+  // иконки занятия — рисуем векторно (эмодзи в canvas на некоторых WebView не рендерится, вместо
+  // иконки показывает пустой квадрат/крестик — поэтому никаких fillText с эмодзи тут)
+  if (v.state === 'chop' || v.state === 'fight' || v.state === 'craft' || v.state === 'hunt') {
+    drawActionIcon(v.state, x + 8, y + 2, v.tool);
+  }
+}
+
+// маленькие векторные значки занятий жителя (без зависимости от эмодзи-шрифта)
+function drawActionIcon(kind, ix, iy, tool) {
+  ctx.save();
+  ctx.translate(ix, iy);
+  ctx.lineWidth = 0.9;
+  if (kind === 'chop') {
+    if (tool === 'axe') {
+      ctx.strokeStyle = 'rgb(130,90,50)';
+      ctx.beginPath(); ctx.moveTo(0, 5); ctx.lineTo(3.5, 0.5); ctx.stroke();
+      ctx.fillStyle = 'rgb(200,200,208)';
+      ctx.beginPath(); ctx.moveTo(3, 0); ctx.lineTo(5.5, 0.8); ctx.lineTo(3.4, 2.6); ctx.closePath(); ctx.fill();
+    } else {
+      ctx.fillStyle = 'rgb(220,180,140)';
+      ctx.beginPath(); ctx.arc(2, 2, 2, 0, Math.PI * 2); ctx.fill();
+    }
+  } else if (kind === 'fight') {
+    if (tool === 'spear') {
+      ctx.strokeStyle = 'rgb(150,105,60)';
+      ctx.beginPath(); ctx.moveTo(0, 5.5); ctx.lineTo(4.5, 0.3); ctx.stroke();
+      ctx.fillStyle = 'rgb(210,210,220)';
+      ctx.beginPath(); ctx.moveTo(4.2, 0); ctx.lineTo(5.6, 0.9); ctx.lineTo(3.6, 2); ctx.closePath(); ctx.fill();
+    } else {
+      ctx.fillStyle = 'rgb(225,90,90)';
+      ctx.fillRect(0, 1, 4, 3.4);
+    }
+  } else if (kind === 'craft') {
+    ctx.fillStyle = 'rgb(150,90,55)';
+    ctx.fillRect(1.6, 1.5, 1, 4);
+    ctx.fillStyle = 'rgb(170,170,180)';
+    ctx.fillRect(0, 0, 4.2, 2);
+  } else if (kind === 'hunt') {
+    ctx.strokeStyle = 'rgb(155,115,75)';
+    ctx.beginPath(); ctx.arc(1.6, 2.6, 2.6, -1.05, 1.05); ctx.stroke();
+    ctx.strokeStyle = 'rgba(240,240,245,0.85)'; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(0.5, 0.5); ctx.lineTo(0.5, 4.7); ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawBubble(sx, sy, text, isSel) {
