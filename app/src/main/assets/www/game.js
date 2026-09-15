@@ -373,9 +373,10 @@ function makeTextures() {
     // окно слева
     for (let y = 10; y < 12; y++) for (let x = 4; x < 7; x++) px(g, x, y, 40, 30, 24);
     px(g, 3, 10, 84, 60, 40); px(g, 7, 10, 84, 60, 40);
-    // крыша: двухскатная с коньком и свесами
+    // крыша: двухскатная с коньком и свесами (узко у конька сверху, широко у стен снизу)
     for (let row = 0; row < 8; row++) {
-      for (let x = row; x < 18 - row; x++) {
+      const inset = 7 - row;
+      for (let x = inset; x < 18 - inset; x++) {
         const col = row === 7 ? [70, 46, 32] : (row % 2 ? [96, 62, 44] : [112, 74, 50]);
         px(g, x, row, col[0], col[1], col[2]);
       }
@@ -425,9 +426,10 @@ function makeTextures() {
       px(g, wx + 1, 10, 120, 130, 140); px(g, wx + 1, 11, 120, 130, 140);
       px(g, wx - 1, 10, 96, 68, 44); px(g, wx + 3, 10, 96, 68, 44);
     }
-    // крыша тёмная с чередованием
+    // крыша тёмная с чередованием (узко у конька сверху, широко у стен снизу)
     for (let row = 0; row < 7; row++) {
-      for (let x = row; x < 22 - row; x++) {
+      const inset = 6 - row;
+      for (let x = inset; x < 22 - inset; x++) {
         const col = row === 6 ? [80, 52, 40] : (x + row) % 2 ? [140, 74, 54] : [122, 62, 46];
         px(g, x, row, col[0], col[1], col[2]);
       }
@@ -990,6 +992,7 @@ function startEat(v) {
 }
 function startSleep(v) {
   const hm = homes(); const home = hm.length ? hm[v.id % hm.length] : campfire;
+  v.sleepHome = home;
   const t = approachTile(v, home.x, home.y) || { x: home.x, y: home.y + 1 };
   v.path = astar(v.x, v.y, t.x, t.y); v.pathIdx = 0;
   v.state = 'goto_sleep';
@@ -1631,6 +1634,8 @@ function updateVillager(v, dt) {
     }
     case 'goto_sleep': {
       v.state = 'sleep';
+      // заходит внутрь дома — визуально скрывается там
+      if (v.sleepHome) { v.x = v.sleepHome.x + 0.5; v.y = v.sleepHome.y + 0.5; }
       think(v, pickThought(v, 'sleep'));
       break;
     }
@@ -2021,6 +2026,7 @@ function drawMonster(m) {
 }
 
 function drawVillager(v) {
+  if (v.state === 'sleep') return; // спит внутри дома — не рисуем поверх крыши
   const scale = v.isChild ? 0.65 : 1;
   const x = v.x * TILE - 4, y = v.y * TILE - 6 + (v.isChild ? 4 : 0);
   if (v === selected) {
@@ -2510,6 +2516,8 @@ function openWorld(id) {
   if (loadWorld(id)) {
     inMenu = false; menuScene = false;
     document.getElementById('mainMenu').style.display = 'none';
+    document.getElementById('topbar').style.display = 'flex';
+    document.getElementById('chronicle').style.display = 'block';
   } else {
     deleteWorld(id);
   }
@@ -2523,6 +2531,10 @@ function deleteWorld(id) {
 }
 function showMainMenu() {
   inMenu = true; menuScene = true;
+  document.getElementById('topbar').style.display = 'none';
+  document.getElementById('chronicle').style.display = 'none';
+  document.getElementById('villagerPanel').style.display = 'none';
+  selected = null; selectedObj = null; selectedEnt = null;
   migrateLegacySave();
   const reg = worldsRegistry().sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 12);
   let html = '';
@@ -2547,6 +2559,8 @@ function startNewGame() {
   inMenu = false; menuScene = false;
   document.getElementById('mainMenu').style.display = 'none';
   document.getElementById('intro').style.display = 'flex';
+  document.getElementById('topbar').style.display = 'flex';
+  document.getElementById('chronicle').style.display = 'block';
 }
 function showPauseMenu() {
   saveGame();
