@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>АЙКА МИР — живая деревня</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0b0d14;
+    font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; color: #e8eaf2; }
+  #game { position: fixed; inset: 0; touch-action: none; }
+
+  /* верхняя панель */
+  #topbar { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center;
+    gap: 6px; padding: 8px 10px; z-index: 10; pointer-events: none; flex-wrap: wrap; }
+  #stats { background: rgba(18,22,32,0.9); border: 1px solid rgba(90,100,130,0.25);
+    border-radius: 10px; padding: 7px 12px; font-size: 13px; pointer-events: auto;
+    backdrop-filter: blur(6px); }
+  .dim { color: #8b93a8; }
+  .danger { color: #ff6b6b; font-weight: 700; }
+  .era { color: #e8c874; font-weight: 600; margin-left: 4px; }
+  .obj-icon { font-size: 26px; width: 48px; height: 48px; display: flex; align-items: center;
+    justify-content: center; background: rgba(124,140,255,0.12); border-radius: 10px; flex: none; }
+  #btns { display: flex; gap: 6px; pointer-events: auto; }
+  .btn { background: rgba(24,28,42,0.92); border: 1px solid rgba(90,100,130,0.3); color: #e8eaf2;
+    border-radius: 10px; padding: 7px 10px; font-size: 14px; cursor: pointer; min-width: 38px;
+    text-align: center; backdrop-filter: blur(6px); transition: background .15s; user-select: none; }
+  .btn:active { background: rgba(60,70,110,0.95); }
+
+  /* хроника */
+  #chronicle { position: fixed; left: 10px; bottom: 10px; width: min(320px, 72vw);
+    max-height: 34vh; overflow-y: auto; z-index: 10; pointer-events: auto;
+    background: rgba(16,19,30,0.88); border: 1px solid rgba(90,100,130,0.22);
+    border-radius: 12px; padding: 10px; font-size: 12px; backdrop-filter: blur(6px); }
+  .chron-item { padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.04); line-height: 1.35; }
+  .chron-icon { margin-right: 5px; }
+  .chron-time { color: #7c8cff; font-size: 11px; margin-right: 5px; }
+  #chronicle::-webkit-scrollbar { width: 4px; }
+  #chronicle::-webkit-scrollbar-thumb { background: rgba(124,140,255,0.3); border-radius: 2px; }
+
+  /* панель жителя */
+  #villagerPanel { position: fixed; right: 10px; bottom: 10px; width: min(290px, 80vw);
+    max-height: 52vh; overflow-y: auto; z-index: 11; display: none;
+    background: rgba(18,21,34,0.94); border: 1px solid rgba(124,140,255,0.35);
+    border-radius: 14px; padding: 12px; font-size: 12px; backdrop-filter: blur(8px); }
+  #villagerPanel::-webkit-scrollbar { width: 4px; }
+  #villagerPanel::-webkit-scrollbar-thumb { background: rgba(124,140,255,0.3); }
+  .vp-head { display: flex; align-items: center; gap: 10px; }
+  .vp-portrait { border-radius: 10px; border: 1px solid rgba(124,140,255,0.35); flex: none; }
+  .vp-name { font-size: 15px; font-weight: 700; }
+  .vp-traits { color: #9aa4c0; font-size: 11px; margin-top: 2px; }
+  .vp-close { margin-left: auto; background: none; border: none; color: #8b93a8;
+    font-size: 15px; cursor: pointer; padding: 4px; }
+  .vp-action { margin: 10px 0 6px; color: #c8cde0; }
+  .vp-bars { display: flex; flex-direction: column; gap: 5px; margin: 8px 0; }
+  .bar-row { display: flex; align-items: center; gap: 8px; }
+  .bar-label { width: 56px; color: #9aa4c0; font-size: 11px; }
+  .bar { flex: 1; height: 8px; background: rgba(255,255,255,0.07); border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width .3s; }
+  .vp-carry { color: #c8cde0; margin: 6px 0; }
+  .vp-thoughts { border-top: 1px solid rgba(255,255,255,0.08); margin-top: 8px; padding-top: 8px; }
+  .thought { color: #b8bfd8; font-style: italic; padding: 3px 0; line-height: 1.35; }
+  .thought-time { color: #5c6480; font-style: normal; font-size: 10px; }
+
+  /* интро */
+  #intro { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center;
+    justify-content: center; background: rgba(8,10,16,0.9); backdrop-filter: blur(4px); }
+  .intro-card { background: rgba(20,24,38,0.95); border: 1px solid rgba(124,140,255,0.35);
+    border-radius: 18px; padding: 28px 24px; max-width: 340px; width: 88%;
+    text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+  .intro-title { font-size: 24px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(90deg, #7c8cff, #c07cff); -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent; }
+  .intro-sub { color: #9aa4c0; font-size: 13px; margin: 10px 0 6px; line-height: 1.5; }
+  .intro-feats { text-align: left; margin: 14px 0; color: #c8cde0; font-size: 12.5px; line-height: 1.7; }
+  #btnIntro { margin-top: 8px; width: 100%; padding: 12px; border: none; border-radius: 12px;
+    background: linear-gradient(90deg, #7c6cff, #a86cff); color: white; font-size: 15px;
+    font-weight: 700; cursor: pointer; }
+  #btnIntro:active { opacity: 0.85; }
+
+  @media (max-width: 640px) {
+    #stats { font-size: 11px; padding: 6px 9px; }
+    #chronicle { max-height: 24vh; width: min(260px, 62vw); }
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="topbar">
+  <div id="stats">…</div>
+  <div id="btns">
+    <button class="btn" id="btnPause">⏸</button>
+    <button class="btn" id="btnSpeed">1×</button>
+    <button class="btn" id="btnZoomIn">+</button>
+    <button class="btn" id="btnZoomOut">−</button>
+    <button class="btn" id="btnFollow" title="к выбранному">🧑</button>
+    <button class="btn" id="btnWorld" title="новый мир">🎲</button>
+  </div>
+</div>
+
+<div id="chronicle"></div>
+<div id="villagerPanel"></div>
+
+<div id="intro">
+  <div class="intro-card">
+    <div class="intro-title">АЙКА МИР</div>
+    <div class="intro-sub">Живая пиксельная деревня. Мир генерируется случайно — каждый раз новый. Жители думают и развиваются сами.</div>
+    <div class="intro-feats">
+      • Всё начинается с <b>двух древних людей</b> у костра
+      • 🏕→🏠→🏡 Эпохи: шалаши, хижины, каменные дома
+      • 🪨 Добывают камень и мастерят из него орудия
+      • 👾 Ночью деревню атакуют слаймы — жители сражаются!
+      • 🐺 Волки, 🐇 кролики, 🌧 дождь с громом
+      • 👉 Тапни ЛЮБОЙ объект — дерево, камень, поле, костёр — увидишь его ресурсы и состояние
+      • 👶 Дети наследуют характеры, деревня эволюционирует
+      • 🎲 Кнопка «новый мир» — свежая планета
+    </div>
+    <button id="btnIntro">Наблюдать</button>
+  </div>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
