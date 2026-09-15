@@ -546,29 +546,69 @@ function makeTextures() {
 }
 
 function makeVillagerSpriteSet(body) {
+  // 4-кадровый цикл ходьбы (шаг/проход/шаг/проход) с махами рук и
+  // подъёмом корпуса на проходных кадрах. Раскладка по строкам (холст 8x14):
+  //   волосы y0..y0+1, лицо y0+2..y0+4 (глаза y0+3), торс y0+5..y0+8,
+  //   ремень y0+9, ноги y0+10..13. y0 = 2 (обычный) / 1 (корпус приподнят).
   const frames = [];
-  for (let f = 0; f < 2; f++) {
+  const { hair, shirt, pants, skin } = body;
+  const SHOE = [40, 34, 30], EYE = [28, 22, 20];
+  const hi = (c, k) => `rgb(${Math.min(255, c[0] + k)},${Math.min(255, c[1] + k)},${Math.min(255, c[2] + k)})`;
+  for (let f = 0; f < 4; f++) {
     const c = document.createElement('canvas'); c.width = 8; c.height = 14;
     const g = c.getContext('2d');
-    const { hair, shirt, pants, skin } = body;
+    const bob = (f === 1 || f === 3) ? 1 : 0;
+    const y0 = 2 - bob;
+    // волосы
     g.fillStyle = `rgb(${hair[0]},${hair[1]},${hair[2]})`;
-    g.fillRect(1, 0, 6, 2); g.fillRect(0, 1, 8, 2);
+    g.fillRect(1, y0, 6, 2); g.fillRect(0, y0 + 1, 8, 2);
+    // лицо
     g.fillStyle = `rgb(${skin[0]},${skin[1]},${skin[2]})`;
-    g.fillRect(1, 3, 6, 3);
-    px(g, 2, 4, 30, 24, 22); px(g, 5, 4, 30, 24, 22);
+    g.fillRect(1, y0 + 2, 6, 3);
+    px(g, 2, y0 + 3, EYE[0], EYE[1], EYE[2]);
+    px(g, 5, y0 + 3, EYE[0], EYE[1], EYE[2]);
+    px(g, 1, y0 + 4, skin[0] * 0.86 | 0, skin[1] * 0.86 | 0, skin[2] * 0.86 | 0); // щека-тень
+    // торс
     g.fillStyle = `rgb(${shirt[0]},${shirt[1]},${shirt[2]})`;
-    g.fillRect(1, 6, 6, 4);
-    px(g, 0, 6, shirt[0], shirt[1], shirt[2]); px(g, 7, 6, shirt[0], shirt[1], shirt[2]);
-    px(g, 0, 7, skin[0], skin[1], skin[2]); px(g, 7, 7, skin[0], skin[1], skin[2]);
+    g.fillRect(1, y0 + 5, 6, 4);
+    g.fillStyle = hi(shirt, 45);
+    g.fillRect(2, y0 + 5, 3, 1); // блик на груди
+    // руки — качаются: на шаге Л правая рука вперёд(длиннее/ниже), левая назад(короче/выше); на шаге П зеркально
+    g.fillStyle = `rgb(${shirt[0]},${shirt[1]},${shirt[2]})`;
+    const leftDown  = f === 2;   // шаг П: левая рука идёт вниз-вперёд
+    const rightDown = f === 0;   // шаг Л: правая рука вперёд
+    const armTop = (down) => y0 + 6 + (down ? 0 : 1);
+    const armLen = (down) => (down ? 3 : 2);
+    // левая рука (x=0)
+    g.fillRect(0, armTop(leftDown), 1, armLen(leftDown) - 1);
+    px(g, 0, armTop(leftDown) + armLen(leftDown) - 1, skin[0], skin[1], skin[2]); // кисть
+    // правая рука (x=7)
+    g.fillRect(7, armTop(rightDown), 1, armLen(rightDown) - 1);
+    px(g, 7, armTop(rightDown) + armLen(rightDown) - 1, skin[0], skin[1], skin[2]);
+    // ремень
     g.fillStyle = `rgb(${pants[0]},${pants[1]},${pants[2]})`;
-    g.fillRect(2, 10, 4, 2);
+    g.fillRect(2, y0 + 9, 4, 1);
+    // ноги (низ закреплён у земли: y11..y13)
     g.fillStyle = `rgb(${pants[0]},${pants[1]},${pants[2]})`;
-    if (f === 0) { g.fillRect(2, 12, 2, 2); g.fillRect(5, 12, 1, 2); }
-    else { g.fillRect(3, 12, 1, 2); g.fillRect(4, 12, 2, 2); }
+    const shoe = (x) => px(g, x, 13, SHOE[0], SHOE[1], SHOE[2]);
+    if (f === 0) {          // шаг Л: левая нога вперёд (2 ряда), правая назад (1 ряд)
+      g.fillRect(1, 12, 2, 1); g.fillRect(5, 12, 2, 1);
+      px(g, 1, 13, SHOE[0], SHOE[1], SHOE[2]); px(g, 2, 13, SHOE[0], SHOE[1], SHOE[2]);
+      shoe(6);
+    } else if (f === 2) {   // шаг П: зеркально
+      g.fillRect(1, 12, 2, 1); g.fillRect(5, 12, 2, 1);
+      shoe(1); px(g, 2, 13, SHOE[0], SHOE[1], SHOE[2]);
+      px(g, 5, 13, SHOE[0], SHOE[1], SHOE[2]); px(g, 6, 13, SHOE[0], SHOE[1], SHOE[2]);
+    } else {                // проход: ноги вместе, корпус приподнят — ноги длиннее на 1
+      g.fillRect(2, 11, 2, 2); g.fillRect(4, 11, 2, 2);
+      px(g, 2, 13, SHOE[0], SHOE[1], SHOE[2]); px(g, 3, 13, SHOE[0], SHOE[1], SHOE[2]);
+      px(g, 4, 13, SHOE[0], SHOE[1], SHOE[2]); px(g, 5, 13, SHOE[0], SHOE[1], SHOE[2]);
+    }
     frames.push(c);
   }
   return frames;
 }
+
 function makeVillagerSprites() {
   spr.villagerFrames = spr.bodies.map(b => makeVillagerSpriteSet(b));
   spr.villagerFlip = spr.villagerFrames.map(f => f.map(c => {
@@ -2036,8 +2076,16 @@ function drawVillager(v) {
     ctx.strokeRect(x - 1.5, y - 1.5, 11, 16.5);
   }
   const moving = v.path && v.pathIdx < v.path.length;
-  const frame = moving && Math.floor((v.animT || 0) * 6) % 2 ? 1 : 0;
+  // ходьба: 4-кадровый цикл 8 к/с; простой: лёгкое дыхание (покачивание корпуса)
+  const frame = moving
+    ? Math.floor((v.animT || 0) * 8) % 4
+    : (Math.sin((simTime + v.id) * 2.2) > 0 ? 1 : 3);
   const set = v.facing >= 0 ? spr.villagerFrames[v.bodyIdx] : spr.villagerFlip[v.bodyIdx];
+  // тень под ногами — приземляет фигуру, не даёт 'повиснуть в воздухе'
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.beginPath();
+  ctx.ellipse(x + 4, y + 14 * scale - 1, 3.6 * scale, 1.3 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
   if (v.isChild) ctx.drawImage(set[frame], Math.round(x), Math.round(y), 8 * scale, 14 * scale);
   else ctx.drawImage(set[frame], Math.round(x), Math.round(y));
   // имя при зуме
