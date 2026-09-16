@@ -111,7 +111,44 @@
     font-size: 14px; cursor: pointer; }
   .menu-foot { color: #8089a6; font-size: 11px; margin-top: 12px; text-align: center; }
 
+  /* life-режим */
+  #lifeHud { position: fixed; bottom: max(10px, env(safe-area-inset-bottom)); left: 50%;
+    transform: translateX(-50%); z-index: 12; display: none; flex-direction: column;
+    align-items: center; gap: 7px; pointer-events: auto; width: min(340px, 92vw); }
+  .lh-bars { width: 100%; background: rgba(16,19,30,0.88); border: 1px solid rgba(90,100,130,0.22);
+    border-radius: 12px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .lh-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .lh-row .bar { flex: 1; }
+  .lh-num { color: #9aa4c0; font-size: 11px; min-width: 38px; text-align: right; }
+  #lhInv { background: rgba(16,19,30,0.88); border: 1px solid rgba(90,100,130,0.22);
+    border-radius: 12px; padding: 7px 10px; font-size: 12.5px; display: flex; gap: 9px;
+    flex-wrap: wrap; justify-content: center; }
+  #lhInv .lhi { display: flex; gap: 3px; align-items: center; }
+  #lhBtns { display: flex; gap: 6px; }
+  #lifeAct { position: fixed; bottom: max(10px, env(safe-area-inset-bottom)); left: 50%;
+    transform: translateX(-50%); z-index: 13; background: rgba(18,21,34,0.95);
+    border: 1px solid rgba(124,140,255,0.4); border-radius: 14px; padding: 10px;
+    display: none; flex-direction: column; gap: 7px; width: min(300px, 90vw); }
+  .act-btn { border: none; border-radius: 10px; padding: 10px; font-size: 14px; font-weight: 600;
+    background: rgba(124,140,255,0.14); color: #dfe4ff; cursor: pointer; text-align: left; }
+  .act-btn:active { background: rgba(124,140,255,0.3); }
+  .act-btn.danger { background: rgba(224,85,85,0.16); color: #ffb3b3; }
+  .act-title { color: #9aa4c0; font-size: 12px; text-align: center; }
+  .craft-item { background: rgba(124,140,255,0.09); border: 1px solid rgba(124,140,255,0.28);
+    border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; display: flex;
+    align-items: center; gap: 10px; }
+  .craft-name { font-size: 13.5px; font-weight: 700; flex: 1; }
+  .craft-req { color: #9aa4c0; font-size: 11px; display: block; margin-top: 2px; }
+  .craft-btn { border: none; border-radius: 9px; padding: 8px 12px; background: #5a6fe8;
+    color: #fff; font-weight: 700; font-size: 12.5px; cursor: pointer; flex: none; }
+  .craft-btn:disabled { background: rgba(255,255,255,0.1); color: #6a7288; }
+  .craft-btn:not(:disabled):active { opacity: 0.8; }
+  .owned { color: #3fbf7f; font-weight: 700; font-size: 12px; flex: none; }
+
+  body.lifeMode #chronicle { max-height: 22vh; bottom: 148px; }
+  body.lifeMode #villagerPanel { display: none !important; }
   @media (max-width: 640px) {
+    body.lifeMode #chronicle { max-height: 16vh; bottom: 156px; width: min(240px, 58vw); }
     #stats { font-size: 11px; padding: 6px 9px; }
     #chronicle { max-height: 24vh; width: min(260px, 62vw); }
   }
@@ -141,8 +178,9 @@
     <div class="scene-title">ПЕРВЫЕ ЛЮДИ</div>
     <div class="scene-sub">каждый мир — отдельная история</div>
     <div id="worldsList"></div>
-    <button id="btnNewGame" class="menu-primary">🔥 СОЗДАТЬ НОВЫЙ МИР</button>
-    <div class="menu-foot">v3.3 · сохранение каждый рассвет · миров до 12</div>
+    <button id="btnNewLife" class="menu-primary" style="background:linear-gradient(135deg,#3fbf7f,#1f9d60);">🌱 НОВАЯ ЖИЗНЬ — сыграй за жителя</button>
+    <button id="btnNewGame" class="menu-secondary">🔥 МИР-НАБЛЮДЕНИЕ</button>
+    <div class="menu-foot">v3.6 · ЖИЗНЬ · стройка · живой мозг · миров до 12</div>
   </div>
 </div>
 
@@ -150,7 +188,58 @@
   <div class="intro-card">
     <div class="intro-title" style="font-size:20px">ПАУЗА</div>
     <button id="btnResume" class="menu-primary">▶ ПРОДОЛЖИТЬ</button>
+    <div style="margin-top:12px; text-align:left; font-size:12px; border-top:1px solid rgba(255,255,255,0.08); padding-top:10px;">
+      <b>🧠 Живой мозг жителей (Groq)</b>
+      <div style="color:#9aa4c0; margin:5px 0;">настоящие мысли и желания от ИИ — раз в ~12 сек</div>
+      <label style="display:flex; gap:7px; align-items:center; cursor:pointer;">
+        <input type="checkbox" id="llmOn" checked> включить живые мысли
+      </label>
+      <input id="llmKey" placeholder="ключ Groq (вшит свой — можно заменить)" style="width:100%; margin-top:7px; padding:8px; border-radius:9px; border:1px solid rgba(124,140,255,0.35); background:rgba(255,255,255,0.05); color:#e8eaf2; font-size:12px;">
+      <button id="btnLlmSave" class="menu-secondary" style="margin-top:7px;">💾 Сохранить настройки мозга</button>
+    </div>
     <button id="btnToMenu" class="menu-secondary">💾 Сохранить и выйти в меню</button>
+  </div>
+</div>
+
+<div id="lifeIntro" style="display:none">
+  <div class="intro-card">
+    <div class="intro-title">НОВАЯ ЖИЗНЬ</div>
+    <div class="intro-sub">Ты рождаешься в маленькой деревне — 5 домов, 12 человек. Родители и достаток — случайны. Помогай деревне развиваться, охоться, добывай руду в шахте и мастерай оружие — или иди своим путём. Выбери, кем родиться:</div>
+    <button id="btnLifeF" class="menu-primary" style="background:linear-gradient(135deg,#e86fa4,#c0569a);">👧 Девушкой</button>
+    <button id="btnLifeM" class="menu-secondary">👦 Парнем</button>
+    <div class="menu-foot">деревня живёт своей жизнью, пока ты делаешь свой выбор</div>
+  </div>
+</div>
+
+<div id="craftMenu" style="display:none">
+  <div class="intro-card" style="max-width: 360px;">
+    <div class="intro-title" style="font-size:20px">🎒 КРАФТ</div>
+    <div class="intro-sub" id="craftInfo" style="font-size:12px"></div>
+    <div id="craftList" style="text-align:left"></div>
+    <button id="btnCraftClose" class="menu-primary" style="margin-top:10px">Закрыть</button>
+  </div>
+</div>
+
+<div id="lifeDead" style="display:none">
+  <div class="intro-card">
+    <div class="intro-title" style="font-size:22px">☠️ ТЫ ПОГИБ</div>
+    <div class="intro-sub" id="deadReason"></div>
+    <button id="btnRespawn" class="menu-primary" style="background:linear-gradient(135deg,#3fbf7f,#1f9d60);">🌅 Восстать (потеряешь половину припасов)</button>
+    <button id="btnDeadMenu" class="menu-secondary">Выйти в меню</button>
+  </div>
+</div>
+
+<div id="lifeAct" style="display:none"></div>
+<div id="lifeHud" style="display:none">
+  <div class="lh-bars">
+    <div class="lh-row"><span>❤️</span><div class="bar"><div class="bar-fill" id="lhHp" style="background:#e05555"></div></div><span class="lh-num" id="lhHpN"></span></div>
+    <div class="lh-row"><span>🍖</span><div class="bar"><div class="bar-fill" id="lhHunger" style="background:#d8973c"></div></div><span class="lh-num" id="lhHungerN"></span></div>
+  </div>
+  <div id="lhInv"></div>
+  <div id="lhBtns">
+    <button class="btn" id="btnCraft">🎒 Крафт</button>
+    <button class="btn" id="btnSleepHud">😴 Спать</button>
+    <button class="btn" id="btnLifeHelp">❔</button>
   </div>
 </div>
 
@@ -172,6 +261,6 @@
   </div>
 </div>
 
-<script src="game.js?v=33"></script>
+<script src="game.js?v=36"></script>
 </body>
 </html>
