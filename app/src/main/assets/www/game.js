@@ -21,11 +21,12 @@ let monsters = [];  // слаймы (враги, приходят ночью)
 let campfire = { x: 0, y: 0 };
 let huts = [];
 let farms = [];     // объекты типа 'farm' тоже лежат в objects
-let stocks = { wood: 0, berries: 6, stone: 0, fur: 0 };
+let stocks = { wood: 0, berries: 6, stone: 0, fur: 0, ore: 0, iron: 0, steel: 0 };
 let totalWood = 0;
 let pendingBuild = null;   // { kind:'hut'|'farm', x, y, assigned }
 let settlersThresholds = [30, 70, 130, 220, 340];
 let settlersSpawned = 0;
+let smeltT = 30;
 let simTime = 0;
 let simSpeed = 1, paused = false, inMenu = true, menuScene = true;
 let mode = 'observer'; // 'observer' | 'life'
@@ -228,7 +229,7 @@ function genWorld(s) {
     animals.push({ id: nextId++, kind: 'deer', x: p.x, y: p.y, hp: 14, state: 'idle', t: rng() * 3, dirX: 0, dirY: 0, facing: 1, animT: 0, preyId: 0 });
   }
   monsters = [];
-  stocks = { wood: 0, berries: 6, stone: 0, fur: 0 };
+  stocks = { wood: 0, berries: 6, stone: 0, fur: 0, ore: 0, iron: 0, steel: 0 };
   totalWood = 0; pendingBuild = null; settlersSpawned = 0;
   simTime = 0; selected = null; selectedObj = null; selectedEnt = null; lastPhase = 0;
   weather = { rain: false, kind: 'clear', t: 60 + rng() * 120, bolt: 0 };
@@ -259,16 +260,19 @@ function addHut(x, y) {
   huts.push({ x, y });
   return true;
 }
-const ERAS = [null, 'Древний лагерь', 'Стоянка', 'Деревня', 'Поселение', 'Бронзовый век', 'Пороховая эпоха', 'Современность'];
+const ERAS = [null, 'Древний лагерь', 'Стоянка', 'Деревня', 'Поселение', 'Бронзовый век', 'Железный век', 'Стальной век', 'Пороховая эпоха', 'Современность'];
 function cnt(type) { let n = 0; for (const o of objects) if (o.type === type) n++; return n; }
 function beds() { return cnt('shelter') * 2 + cnt('hut') * 2 + cnt('house') * 3; }
 function homes() { return objects.filter(o => o.type === 'shelter' || o.type === 'hut' || o.type === 'house'); }
 function era() {
   if (mode === 'life' && P) {
-    if (P.weapon === 5) return 7; // автомат — современность
-    if (P.weapon === 4) return 6; // мушкет — порох
+    if (P.weapon === 5) return 9; // автомат — современность
+    if (P.weapon === 4) return 8; // мушкет — порох
   }
   if (cnt('house') >= 2) {
+    if ((stocks.steel || 0) >= 5 && cnt('mine') >= 1) return 7; // сталь
+    if ((stocks.iron || 0) >= 12 && cnt('mine') >= 1) return 6;  // железо
+    if (cnt('mine') >= 1 && (stocks.ore || 0) >= 20) return 5;   // бронза: шахта + руда
     if (mode === 'life' && P && P.weapon === 3) return 5; // игрок принёс деревне бронзу
     return 4;
   }
@@ -927,7 +931,7 @@ function makeVillager(x, y) {
     id: nextId++, name, bodyIdx, traits,
     x, y, path: null, pathIdx: 0, facing: 1,
     state: 'idle', stateT: 0, workT: 0, targetObj: null, targetVil: null,
-    carry: { wood: 0, berries: 0, stone: 0, fur: 0 },
+    carry: { wood: 0, berries: 0, stone: 0, fur: 0, ore: 0 },
     coat: false,
     needs: { hunger: 70 + rng() * 30, energy: 70 + rng() * 30, social: 50 + rng() * 40 },
     skill: { chop: 1, forage: 1, combat: 1 },
@@ -1095,6 +1099,11 @@ function decide(v) {
     if (b) { startForage(v, b); return; }
     const rb = nearestAnimal(v, 'rabbit', 9) || (worldClimate === 1 ? nearestAnimal(v, 'camel', 12) : null) || (worldClimate === 5 ? nearestAnimal(v, 'deer', 12) : null);
     if (rb) { startHunt(v, rb); return; }
+  }
+  // металлы: копим руду в шахте
+  if (era() >= 4 && cnt('mine') > 0 && (stocks.ore || 0) < 40 && rng() < 0.3) {
+    const mo = objects.find(o => o.type === 'mine');
+    if (mo) { startMine(v, mo); return; }
   }
   // северная деревня: каждому — шуба
   if (worldClimate === 5 && !night && !v.isChild) {
@@ -1284,6 +1293,18 @@ function updateSim(dt) {
   const p = phase();
   // погода
   weather.t -= dt;
+  // металлургия: у костра варят железо и сталь
+  smeltT -= dt;
+  if (smeltT <= 0) {
+    smeltT = 30;
+    if ((stocks.ore || 0) >= 8 && cnt('mine') >= 1) {
+      stocks.ore -= 8; stocks.iron = (stocks.iron || 0) + 1;
+      logEvent('🔥', 'Плавильня у костра: из руды вышло железо (+1 🟫)');
+    } else if ((stocks.iron || 0) >= 5 && (stocks.steel || 0) < 12 && cnt('mine') >= 1) {
+      stocks.iron -= 5; stocks.steel = (stocks.steel || 0) + 1;
+      logEvent('⚒️', `Кузнецы сварили сталь! (+1 ⚙️) — ${ERAS[era()]} крепчает`);
+    }
+  }
   if (weather.t <= 0) {
     let kind = 'clear';
     const r = rng();
@@ -1482,6 +1503,8 @@ function tryPlanBuild() {
     else if (stocks.wood >= 10 && cnt('shelter') < 6) plan = { kind: 'shelter', wood: 10 };
   } else if (e >= 3 && stocks.berries < 25 && farms.length < 4 && stocks.wood >= 15) {
     plan = { kind: 'farm', wood: 15 };
+  } else if (e >= 4 && cnt('mine') < 2 && stocks.wood >= 15 && stocks.stone >= 10) {
+    plan = { kind: 'mine', wood: 15, stone: 10 };
   }
   if (!plan) return;
   const spot = findBuildSpot(plan.kind);
@@ -1489,7 +1512,7 @@ function tryPlanBuild() {
   stocks.wood -= plan.wood;
   if (plan.stone) stocks.stone -= plan.stone;
   pendingBuild = { kind: plan.kind, x: spot.x, y: spot.y, assigned: null, wood: plan.wood, stone: plan.stone || 0, at: simTime };
-  const names = { shelter: 'шалаш 🏕', hut: 'хижину 🏠', house: 'настоящий дом 🏡', farm: 'поле 🌾' };
+  const names = { shelter: 'шалаш 🏕', hut: 'хижину 🏠', house: 'настоящий дом 🏡', farm: 'поле 🌾', mine: 'шахту ⛏️' };
   logEvent('📐', `Деревня планирует строить: ${names[plan.kind]}. Материалы выделены.`);
 }
 
@@ -1767,7 +1790,7 @@ function updateVillager(v, dt) {
           removeObject(o);
           addObject('stump', o.x, o.y);
           regrowQueue.push({ x: o.x, y: o.y, at: simTime + 2 * DAY_LEN / rainMult() });
-          v.carry.wood += Math.ceil(4 * v.skill.chop);
+          v.carry.wood += Math.ceil(4 * v.skill.chop * [1, 1, 1.1, 1.15, 1.15, 1.3, 1.5, 1.8, 1.8, 1.8][era()]);
           v.skill.chop = Math.min(3, v.skill.chop + 0.06);
           totalWood += 3;
           logEvent('🪓', `${v.name} срубил дерево (+4 🪵${v.tool === 'axe' ? ' топором' : ''})`);
@@ -1829,6 +1852,7 @@ function updateVillager(v, dt) {
     case 'goto_craft': {
       // сдаём ношу в общий котёл — из неё и мастерим
       stocks.wood += v.carry.wood; stocks.stone += v.carry.stone; stocks.berries += v.carry.berries;
+      stocks.ore = (stocks.ore || 0) + (v.carry.ore || 0); v.carry.ore = 0;
       stocks.fur = (stocks.fur || 0) + (v.carry.fur || 0); v.carry.fur = 0;
       v.carry = { wood: 0, berries: 0, stone: 0 };
       v.state = 'craft'; v.workT = 2.5;
@@ -1952,9 +1976,14 @@ function updateVillager(v, dt) {
       if (v.workT <= 0) {
         const o = v.targetObj;
         if (o && objects.includes(o)) {
-          removeObject(o);
-          v.carry.stone += 2;
-          logEvent('🪨', `${v.name} добыл камень (+2 🪨)`);
+          if (o.type === 'mine') {
+            v.carry.ore = (v.carry.ore || 0) + 1;
+            logEvent('⛏️', `${v.name} спустил${v.gender === 'f' ? 'ась' : 'ся'} в шахту и достал${v.gender === 'f' ? 'а' : ''} руду (+1 ⛏️)`);
+          } else {
+            removeObject(o);
+            v.carry.stone += 2;
+            logEvent('🪨', `${v.name} добыл камень (+2 🪨)`);
+          }
         }
         v.targetObj = null; v.state = 'idle'; v.decideT = 0.4 + rng();
       }
@@ -1962,6 +1991,7 @@ function updateVillager(v, dt) {
     }
     case 'goto_deposit': {
       stocks.wood += v.carry.wood; stocks.berries += v.carry.berries; stocks.stone += v.carry.stone;
+      stocks.ore = (stocks.ore || 0) + (v.carry.ore || 0); v.carry.ore = 0;
       stocks.fur = (stocks.fur || 0) + (v.carry.fur || 0); v.carry.fur = 0;
       if (v.carry.wood > 0 || v.carry.berries > 0 || v.carry.stone > 0)
         logEvent('📦', `${v.name} сдал запасы: +${v.carry.wood} 🪵 +${v.carry.berries} 🫐 +${v.carry.stone} 🪨`);
@@ -2043,8 +2073,8 @@ function updateVillager(v, dt) {
           v.pathIdx = 0;
           if (!v.path) {
             // место недостижимо — отмена стройки с возвратом материалов
-            const COSTS = { shelter: { wood: 10 }, farm: { wood: 15 }, hut: { wood: 25 }, house: { wood: 50, stone: 10 } };
-            const c = COSTS[pendingBuild.kind] || {};
+            const COSTS = { shelter: { wood: 10 }, farm: { wood: 15 }, hut: { wood: 25 }, house: { wood: 50, stone: 10 }, mine: { wood: 15, stone: 10 } };
+            const c = { mine: { wood: 15, stone: 10 }, shelter: { wood: 10 }, farm: { wood: 15 }, hut: { wood: 25 }, house: { wood: 50, stone: 10 } }[pendingBuild.kind] || {};
             stocks.wood += c.wood || 0; stocks.stone += c.stone || 0;
             logEvent('🚧', 'Стройку отменили: место недостижимо. Материалы вернули на склад.');
             pendingBuild = null;
@@ -2054,7 +2084,7 @@ function updateVillager(v, dt) {
         break;
       }
       v.state = 'build';
-      v.workT = { shelter: 2.5, farm: 3.5, hut: 4.5, house: 6 }[pendingBuild.kind] || 4;
+      v.workT = { shelter: 2.5, farm: 3.5, hut: 4.5, house: 6, mine: 6 }[pendingBuild.kind] || 4;
       break;
     }
     case 'build': {
@@ -2073,6 +2103,9 @@ function updateVillager(v, dt) {
           } else if (kind === 'house') {
             addObject('house', x, y);
             logEvent('🏡', `${v.name} построил настоящий дом из камня и дерева!`);
+          } else if (kind === 'mine') {
+            addObject('mine', x, y);
+            logEvent('⛏️', `${v.name} пробил шахту в скале! Деревня входит в век металла.`);
           } else {
             if (addHut(x, y)) logEvent('🏠', `${v.name} построил хижину! Деревня растёт.`);
           }
@@ -2626,7 +2659,7 @@ function objInfo(o) {
   if (o.type === 'grave') lines.push('Деревня помнит своих героев…');
   if (o.type === 'mine') lines.push('Глубокий ход в скале', 'Даёт <b>руду ⛏️</b> — из неё куют бронзу', 'Руда: <b>3 ⛏️ → 1 🟠 бронза</b> у костра');
   if (o.type === 'campfire') {
-    lines.push(`Эпоха: <b>${ERAS[era()]}</b>`, `Жителей: <b>${villagers.length}</b> · Койки: <b>${beds()}</b>`, `Склад: <b>${stocks.wood} 🪵 · ${stocks.stone} 🪨 · ${stocks.berries} 🫐</b>`, `Зданий: 🏕${cnt('shelter')} 🏠${cnt('hut')} 🏡${cnt('house')} 🌾${farms.length}`, `Сражено слайм: <b>${SIM.monsterKills}</b> · Растаяло на солнце: <b>${SIM.melted || 0}</b> · Потери: <b>${SIM.deaths}</b> · Рождения: <b>${SIM.births}</b>`);
+    lines.push(`Эпоха: <b>${ERAS[era()]}</b>`, `Жителей: <b>${villagers.length}</b> · Койки: <b>${beds()}</b>`, `Склад: <b>${stocks.wood} 🪵 · ${stocks.stone} 🪨 · ${stocks.berries} 🫐${(stocks.ore || stocks.iron || stocks.steel) ? ` · ${stocks.ore || 0} ⛏️ · ${stocks.iron || 0} 🟫 · ${stocks.steel || 0} ⚙️` : ''}</b>`, `Зданий: 🏕${cnt('shelter')} 🏠${cnt('hut')} 🏡${cnt('house')} 🌾${farms.length}`, `Сражено слайм: <b>${SIM.monsterKills}</b> · Растаяло на солнце: <b>${SIM.melted || 0}</b> · Потери: <b>${SIM.deaths}</b> · Рождения: <b>${SIM.births}</b>`);
   }
   return { icon: t[0], title: t[1], lines };
 }
@@ -3156,6 +3189,7 @@ function restoreWorld(raw) {
     if (mode === 'life' && P) resolveLifeParents();
     stocks = d.stocks;
     if (!stocks.fur) stocks.fur = 0;
+    if (!stocks.ore) stocks.ore = 0; if (!stocks.iron) stocks.iron = 0; if (!stocks.steel) stocks.steel = 0;
     Object.keys(d.sim).forEach(k => SIM[k] = d.sim[k]);
     totalWood = d.totalWood;
     settlersThresholds = d.settlers;
