@@ -2659,7 +2659,7 @@ function updateStats() {
   const hh = String(Math.floor(p * 24)).padStart(2, '0');
   const mm = String(Math.floor((p * 24 % 1) * 60)).padStart(2, '0');
   const phaseName = p < 0.1 ? '🌅 рассвет' : p < 0.3 ? '☀️ утро' : p < 0.55 ? '🌤 день' : p < 0.65 ? '🌇 вечер' : '🌙 ночь';
-  const weatherIcon = weather.rain ? '🌧' : weather.kind === 'snow' ? '❄' : weather.kind === 'blizzard' ? '🌨' : weather.kind === 'fog' ? '🌫' : weather.kind === 'petals' ? '🌸' : '';
+  const weatherIcon = (P && P.coldNow) ? '🥶' : weather.rain ? '🌧' : weather.kind === 'snow' ? '❄' : weather.kind === 'blizzard' ? '🌨' : weather.kind === 'fog' ? '🌫' : weather.kind === 'petals' ? '🌸' : '';
   const danger = monsters.length ? ` <span class="danger">👾 ${monsters.length}!</span>` : '';
   const eraName = ERAS[era()];
   const bedsNow = beds();
@@ -2885,6 +2885,7 @@ function saveGame() {
         gender: P.gender, bodyIdx: P.bodyIdx, name: P.name || '', partnerId: P.partnerId || 0,
         chats: P.chats || {}, x: P.x, y: P.y,
         hp: P.hp, hunger: P.hunger, inv: { ...P.inv }, weapon: P.weapon, axe: P.axe ? 1 : 0,
+        coat: P.coat ? 1 : 0, torch: P.torch ? 1 : 0, backpack: P.backpack ? 1 : 0,
         momId: P.mom ? P.mom.id : 0, dadId: P.dad ? P.dad.id : 0,
         homeX: P.home ? P.home.x : -1, homeY: P.home ? P.home.y : -1,
         wealth: P.wealth ? 1 : 0, kills: P.kills,
@@ -3194,6 +3195,9 @@ const RECIPES = [
   { id: 'musket',   name: '🔫 Мушкет',             req: { ore: 4, wood: 2 }, fire: true, needKnow: 'gun', desc: 'урон 14, перезарядка 2.4с — эра пороха' },
   { id: 'know_auto', name: '📚 Изучить автоматическое оружие', req: { ore: 4, bronze: 1 }, fire: true, study: 30, needW: 4, desc: 'высшая наука деревни' },
   { id: 'auto',     name: '🔫🔫 Автомат',          req: { ore: 6, wood: 2 }, fire: true, needKnow: 'auto', desc: 'урон 5, но стреляет каждые 0.22с' },
+  { id: 'coat',    name: '🧥 Меховая одежда',   req: { fur: 3, wood: 2 }, fire: true, desc: 'спасает от метели в снежных мирах' },
+  { id: 'torch',   name: '🕯 Факел',              req: { wood: 2 }, desc: 'свет в ночи — монстры сторонятся' },
+  { id: 'backpack',name: '🎒 Заплечный мешок',   req: { wood: 5, stone: 2 }, desc: '+1 к любой добыче' },
   { id: 'farm',     name: '🌾 Построить поле пшеницы', req: { wood: 3 }, build: 'farm', desc: 'тапни по траве — урожай сам вырастет' },
   { id: 'shelter',  name: '🏕 Построить шалаш',        req: { wood: 5 }, build: 'shelter', desc: 'быстрое жильё на 2 человек' },
   { id: 'hut',      name: '🏠 Построить хижину',       req: { wood: 8, stone: 2 }, build: 'hut', desc: 'тёплый сруб, +2 места' },
@@ -3253,7 +3257,7 @@ function startLifeGame(gender) {
     x: home.x + 1.5, y: home.y + 1.5,
     path: null, pathIdx: 0, facing: 1, animT: 0,
     hp: 20, hunger: 85,
-    inv: { wood: 0, stone: 0, berries: rich ? 8 : 3, ore: 0, bronze: 0, meat: 0, arrows: 0, bullets: 0 },
+    inv: { wood: 0, stone: 0, berries: rich ? 8 : 3, ore: 0, bronze: 0, meat: 0, arrows: 0, bullets: 0, fur: 0 },
     weapon: 0, axe: rich,
     mom, dad, home, wealth: rich,
     atkCd: 0, busyT: 0, busyKind: null, pending: null, repathT: 0, tries: 0,
@@ -3328,7 +3332,7 @@ function updateLifeHud() {
 }
 const INV_ITEMS = [
   ['wood', '🪵 Дерево'], ['stone', '🪨 Камень'], ['berries', '🫐 Ягоды'], ['meat', '🍖 Мясо'],
-  ['ore', '⛏️ Руда'], ['bronze', '🟠 Бронза'], ['arrows', '🏹 Стрелы'], ['bullets', '🥃 Пули']
+  ['ore', '⛏️ Руда'], ['bronze', '🟠 Бронза'], ['arrows', '🏹 Стрелы'], ['bullets', '🥃 Пули'], ['fur', '🧥 Мех']
 ];
 function invBtn(fn, label, color) {
   return `<button style="margin-left:6px;padding:1px 7px;font-size:11px;border:none;border-radius:8px;background:${color};color:#fff;cursor:pointer" onclick="${fn}">${label}</button>`;
@@ -3367,6 +3371,8 @@ function renderInventory() {
   }
   html += `<div class="inv-cell wide" style="justify-content:space-between"><span>⚔️ Оружие</span><span style="color:#e8c874;font-weight:700">${WEAPON_NAMES[P.weapon]}</span></div>`;
   html += P.axe ? '<div class="inv-cell wide" style="justify-content:space-between"><span>🪓 Топор</span><span style="color:#3fbf7f;font-weight:700">есть</span></div>' : '';
+  html += `<div class="inv-cell wide" style="justify-content:space-between"><span>🧥 Одежда</span><span style="color:${P.coat ? '#3fbf7f' : '#9aa4c0'};font-weight:700">${P.coat ? 'меховая шуба ✔' : 'нет — в метели холодно!'}</span></div>`;
+  html += `<div class="inv-cell wide" style="justify-content:space-between"><span>🎒 Снаряжение</span><span style="color:#9aa4c0">${P.backpack ? 'мешок ✔ ' : ''}${P.torch ? 'факел 🕯' : ''}${!P.backpack && !P.torch ? 'пусто' : ''}</span></div>`;
   if (P.knows.gun) html += '<div class="inv-cell wide" style="justify-content:space-between"><span>📚 Знания</span><span style="color:#9aa4c0">порох' + (P.knows.auto ? ', авто-оружие' : '') + '</span></div>';
   if (P.partnerId) {
     const pv = villagers.find(v => v.id === P.partnerId);
@@ -3452,6 +3458,18 @@ function updatePlayer(dt) {
       lifeBubble('Ты стал' + (P.gender === 'f' ? 'а' : '') + ' родителем!');
     }
   }
+  // холод: метель в снежном мире
+  if (worldClimate === 5 && weather.kind === 'blizzard' && !P.asleep && !P.dead) {
+    const nearFire = dist(P.x, P.y, campfire.x, campfire.y) < 3.5;
+    const inside = homes().some(h => Math.abs(Math.floor(P.x) - h.x) <= 1 && Math.abs(Math.floor(P.y) - h.y) <= 1);
+    P.coldNow = !nearFire && !inside && !P.coat;
+    if (P.coldNow) {
+      P.hp -= 0.32 * dt;
+      if (!P.coldWarned) { P.coldWarned = true; lifeBubble('Холод пробирает до костей! Сооруди меховую одежду'); logEvent('❄', 'Метель кусает без тёплой одежды — беги к костру!'); }
+      if (P.hp <= 0) { playerDie('Ты замёрз' + (P.gender === 'f' ? 'ла' : '') + ' в метель…'); return; }
+    }
+  } else P.coldNow = false;
+  if (weather.kind !== 'blizzard') P.coldWarned = false;
   // голод и регенерация
   P.hunger = Math.max(0, P.hunger - 0.13 * dt);
   if (P.hunger <= 0) {
@@ -3653,7 +3671,9 @@ function startLifeAction(t) {
           if (i >= 0) animals.splice(i, 1);
           const meat = e.kind === 'wolf' ? 3 : (e.kind === 'camel' || e.kind === 'deer') ? 4 : 2;
           P.inv.meat += meat;
-          logEvent(e.kind === 'wolf' ? '🐺' : '🐇', `Ты добыл${P.gender === 'f' ? 'а' : ''} ${e.kind === 'wolf' ? 'волка' : 'кролика'} (+${meat} 🍖)`);
+          if (e.kind === 'wolf' || e.kind === 'deer' || e.kind === 'camel') { P.inv.fur = (P.inv.fur || 0) + 1; }
+          const A_NAME = { wolf: 'волка', rabbit: 'кролика', camel: 'верблюда', deer: 'оленя' }[e.kind] || 'зверя';
+          logEvent(e.kind === 'wolf' ? '🐺' : '🐇', `Ты добыл${P.gender === 'f' ? 'а' : ''} ${A_NAME} (+${meat} 🍖${(e.kind === 'wolf' || e.kind === 'deer' || e.kind === 'camel') ? ' +1 🧥 мех' : ''})`);
         } else {
           const i = monsters.indexOf(e);
           if (i >= 0) monsters.splice(i, 1);
@@ -3704,7 +3724,7 @@ function finishLifeAction(k) {
         removeObject(o);
         addObject('stump', o.x, o.y);
         regrowQueue.push({ x: o.x, y: o.y, at: simTime + 2 * DAY_LEN / rainMult() });
-        const got = P.axe ? 5 : 3;
+        const got = (P.axe ? 5 : 3) + (P.backpack ? 1 : 0);
         P.inv.wood += got;
         logEvent('🪓', `Ты срубил${P.gender === 'f' ? 'а' : ''} дерево (+${got} 🪵${P.axe ? ' топором' : ''})`);
       } else lifeBubble('Дерево уже срубили.');
@@ -3714,15 +3734,16 @@ function finishLifeAction(k) {
       if (o && (o.type === 'bush' || o.type === 'cactus' || o.type === 'reed' || o.type === 'mushroom') && !o.depleted) {
         o.depleted = true;
         o.regrowAt = simTime + 25 / rainMult();
-        P.inv.berries += 2;
-        logEvent('🫐', 'Ты собрал' + (P.gender === 'f' ? 'а' : '') + ' ягоды (+2)');
+        const bgot = 2 + (P.backpack ? 1 : 0);
+        P.inv.berries += bgot;
+        logEvent('🫐', 'Ты собрал' + (P.gender === 'f' ? 'а' : '') + ' ягоды (+' + bgot + ')');
       } else lifeBubble('Куст уже обобрали.');
       break;
     }
     case 'stone': {
       if (o && o.type === 'stone') {
         removeObject(o);
-        P.inv.stone += 3;
+        P.inv.stone += 3 + (P.backpack ? 1 : 0);
         logEvent('🪨', 'Ты добыл' + (P.gender === 'f' ? 'а' : '') + ' камень (+3 🪨)');
       } else lifeBubble('Камень уже разобрали.');
       break;
@@ -3731,8 +3752,8 @@ function finishLifeAction(k) {
       if (o && o.type === 'mine') {
         const bonus = rng() < 0.12 ? 2 : 1;
         const stone = 1 + Math.floor(rng() * 3);
-        P.inv.ore += bonus;
-        P.inv.stone += stone;
+        P.inv.ore += bonus + (P.backpack ? 1 : 0);
+        P.inv.stone += stone + (P.backpack ? 1 : 0);
         logEvent('⛏️', 'Ты добыл' + (P.gender === 'f' ? 'а' : '') + ' в шахте: +' + bonus + ' ⛏️ и +' + stone + ' 🪨');
       } else lifeBubble('Здесь больше нечего копать.');
       break;
@@ -4005,6 +4026,9 @@ function canCraft(r) {
   if (r.needW !== undefined && P.weapon < r.needW) return false;
   if (r.needKnow && !P.knows[r.needKnow]) return false;
   if (r.id === 'axe' && P.axe) return false;
+  if (r.id === 'coat' && P.coat) return false;
+  if (r.id === 'torch' && P.torch) return false;
+  if (r.id === 'backpack' && P.backpack) return false;
   if (r.id === 'spear' && P.weapon >= 1) return false;
   if (r.id === 'bow' && (P.weapon === 2 || P.weapon === 3)) return false;
   if (r.id === 'sword' && P.weapon === 3) return false;
@@ -4017,6 +4041,9 @@ function canCraft(r) {
 }
 function ownedLabel(r) {
   if (r.id === 'axe' && P.axe) return '✔ есть';
+  if (r.id === 'coat' && P.coat) return '✔ надета';
+  if (r.id === 'torch' && P.torch) return '✔ есть';
+  if (r.id === 'backpack' && P.backpack) return '✔ надет';
   if (r.id === 'spear' && P.weapon >= 1) return P.weapon > 1 ? '✔ лучшее' : '✔ есть';
   if (r.id === 'bow' && P.weapon === 2) return '✔ есть';
   if (r.id === 'bow' && P.weapon === 3) return '✔ есть меч';
@@ -4060,6 +4087,9 @@ function craftItem(id) {
     return;
   }
   if (id === 'axe') P.axe = true;
+  else if (id === 'coat') { P.coat = true; logEvent('🧥', 'Меховая одежда готова — теперь метель не страшна!'); }
+  else if (id === 'torch') { P.torch = true; logEvent('🕯', 'Факел в руке — ночь не так темна.'); }
+  else if (id === 'backpack') { P.backpack = true; logEvent('🎒', 'Заплечный мешок собран — уносишь больше добычи.'); }
   else if (id === 'spear') P.weapon = Math.max(P.weapon, 1);
   else if (id === 'bow') P.weapon = Math.max(P.weapon, 2);
   else if (id === 'arrows') P.inv.arrows += 6;
@@ -4093,6 +4123,22 @@ function drawLifePlayer() {
   ctx.ellipse(x + 4, y + 13, 3.6, 1.3, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.drawImage(set[frame], Math.round(x), Math.round(y));
+  // факел: тёплое свечение ночью
+  if (P.torch && nightAmount() > 0.25 && !P.asleep) {
+    const flick = 0.85 + Math.sin(performance.now() / 90) * 0.15;
+    const rad = 26 * flick;
+    const g = ctx.createRadialGradient(x + 4, y + 6, 2, x + 4, y + 6, rad);
+    g.addColorStop(0, 'rgba(255,190,90,0.30)');
+    g.addColorStop(0.5, 'rgba(255,160,60,0.12)');
+    g.addColorStop(1, 'rgba(255,140,40,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x + 4, y + 6, rad, 0, Math.PI * 2); ctx.fill();
+    px(ctx, x + 8, y + 1, 255, 200, 90); px(ctx, x + 8, y, 255, 160, 40); // огонёк
+  }
+  // шуба: коричневый ворот
+  if (P.coat) { px(ctx, x + 2, y + 5, 122, 84, 48); px(ctx, x + 5, y + 5, 122, 84, 48); px(ctx, x + 3, y + 6, 100, 66, 38); px(ctx, x + 4, y + 6, 100, 66, 38); }
+  // холод: синий фильтр на герое
+  if (P.coldNow) { ctx.fillStyle = 'rgba(120,170,255,0.25)'; ctx.fillRect(Math.round(x), Math.round(y), 8, 14); }
   // мягкая метка «это ты»
   const t = performance.now() / 320;
   ctx.strokeStyle = `rgba(124,140,255,${0.45 + Math.sin(t) * 0.2})`;
@@ -4145,8 +4191,8 @@ function restoreLifePlayer(pd, saved) {
     x: pd.x, y: pd.y,
     path: null, pathIdx: 0, facing: 1, animT: 0,
     hp: pd.hp, hunger: pd.hunger,
-    inv: { wood: 0, stone: 0, berries: 0, ore: 0, bronze: 0, meat: 0, arrows: 0, bullets: 0, ...pd.inv },
-    weapon: pd.weapon, axe: !!pd.axe,
+    inv: { wood: 0, stone: 0, berries: 0, ore: 0, bronze: 0, meat: 0, arrows: 0, bullets: 0, fur: 0, ...pd.inv },
+    weapon: pd.weapon, axe: !!pd.axe, coat: !!pd.coat, torch: !!pd.torch, backpack: !!pd.backpack,
     mom: null, dad: null,
     home: { x: pd.homeX, y: pd.homeY },
     wealth: !!pd.wealth,
