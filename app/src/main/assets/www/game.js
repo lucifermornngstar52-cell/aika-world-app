@@ -33,6 +33,18 @@ let mode = 'observer'; // 'observer' | 'life'
 let P = null;        // игрок в режиме «Жизнь»
 let worldId = null, worldName = '';
 let seed = (Date.now() % 2147483647) | 0;
+let countryKey = '';
+const KZ = { c: 0, n: 'Казахская Степь', arid: 0.55 };
+const COUNTRY_KEYS = {
+  'кз': KZ, 'kz': KZ,
+  'рф': { c: 3, n: 'Русская Тайга' }, 'rf': { c: 3, n: 'Русская Тайга' }, 'ru': { c: 3, n: 'Русская Тайга' },
+  'сша': { c: 0, n: 'Американские Прерии' }, 'us': { c: 0, n: 'Американские Прерии' }, 'usa': { c: 0, n: 'Американские Прерии' },
+  'яп': { c: 4, n: 'Страна Сакуры' }, 'jp': { c: 4, n: 'Страна Сакуры' },
+  'кан': { c: 5, n: 'Канадская Глушь' }, 'ca': { c: 5, n: 'Канадская Глушь' },
+  'ег': { c: 1, n: 'Египетские Пески' }, 'eg': { c: 1, n: 'Египетские Пески' },
+  'бра': { c: 2, n: 'Амазонские Топи' }, 'br': { c: 2, n: 'Амазонские Топи' }
+};
+let countryMode = null;
 function urlSeed() {
   try { const p = new URLSearchParams(location.search).get('seed'); return p ? (Math.abs(parseInt(p, 10)) || null) : null; } catch (e) { return null; }
 }
@@ -111,9 +123,12 @@ function randWalkable(minDistFromCamp, maxTry) {
 }
 
 // ── Генерация мира ────────────────────────────────────────────────
-function genWorld(s) {
+function genWorld(s, country) {
   rng = mulberry32(s);
-  const clim = seedClimate(s); worldClimate = clim; worldArid = clim === 1 ? 0.85 : 0.25;
+  countryMode = country && COUNTRY_KEYS[country] ? COUNTRY_KEYS[country] : null;
+  const clim = countryMode ? countryMode.c : seedClimate(s);
+  worldClimate = clim;
+  worldArid = clim === 1 ? 0.85 : (countryMode && countryMode.arid ? countryMode.arid : 0.25);
   const arid = worldArid;
   const nE = makeNoise(s), nM = makeNoise(s + 7777);
   world = new Uint8Array(W * H);
@@ -2905,13 +2920,35 @@ document.getElementById('btnSpeed').onclick = () => {
   simSpeed = simSpeed === 1 ? 2 : simSpeed === 2 ? 4 : simSpeed === 4 ? 8 : 1;
   document.getElementById('btnSpeed').textContent = simSpeed + '×';
 };
+function askCountry(cb) {
+  const oldEl = document.getElementById('countryAsk'); if (oldEl) oldEl.remove();
+  const d = document.createElement('div');
+  d.id = 'countryAsk';
+  d.style.cssText = 'position:fixed;inset:0;z-index:120;background:rgba(8,10,20,.72);display:flex;align-items:center;justify-content:center';
+  d.innerHTML = '<div style="max-width:320px;width:90%;background:#181c2a;border:1px solid rgba(124,140,255,.3);border-radius:14px;padding:16px;color:#fff;font-family:inherit">'
+    + '<div style="font-weight:700;margin-bottom:6px">🎲 Новый мир</div>'
+    + '<div style="font-size:12px;opacity:.75;margin-bottom:10px">Ключ страны — или пусто для случайного мира:'
+    + '<br>кз — Казахстан · рф — Россия · сша — США · яп — Япония'
+    + '<br>кан — Канада · ег — Египет · бра — Бразилия</div>'
+    + '<input id="countryKey" placeholder="кз / рф / яп ..." style="width:100%;box-sizing:border-box;padding:9px;border-radius:9px;border:1px solid rgba(124,140,255,.3);background:#12141f;color:#fff;font-size:14px;margin-bottom:10px">'
+    + '<div style="display:flex;gap:8px"><button id="caOk" style="flex:1;padding:9px;border-radius:9px;border:0;background:#7c8cff;color:#fff;font-weight:700">Создать</button>'
+    + '<button id="caNo" style="flex:1;padding:9px;border-radius:9px;border:1px solid rgba(255,255,255,.2);background:transparent;color:#fff">Отмена</button></div></div>';
+  document.body.appendChild(d);
+  const inp = d.querySelector('#countryKey');
+  inp.focus();
+  d.querySelector('#caOk').onclick = () => { const k = inp.value.trim().toLowerCase(); d.remove(); cb(COUNTRY_KEYS[k] ? k : ''); };
+  d.querySelector('#caNo').onclick = () => d.remove();
+}
 document.getElementById('btnWorld').onclick = () => {
   if (mode === 'life') { showPauseMenu(); return; }
-  seed = (seed * 16807 + 11) % 2147483647;
-  genWorld(seed);
-  chronicleEl.innerHTML = '';
-  logEvent('🎲', 'Новый мир создан! Сид: ' + seed);
-  focusVillage();
+  askCountry(key => {
+    seed = (seed * 16807 + 11) % 2147483647;
+    countryKey = key;
+    genWorld(seed, key);
+    chronicleEl.innerHTML = '';
+    logEvent('🎲', countryMode ? 'Новый мир: ' + worldName + (countryKey ? ' (ключ: ' + countryKey + ')' : '') : 'Новый мир создан! Сид: ' + seed);
+    focusVillage();
+  });
 };
 document.getElementById('btnZoomIn').onclick = () => { zoom = Math.min(5, zoom * 1.25); clampCam(); };
 document.getElementById('btnZoomOut').onclick = () => { zoom = Math.max(0.8, zoom / 1.25); clampCam(); };
@@ -3110,8 +3147,9 @@ function saveGame() {
   try {
     if (worldId == null) {
       worldId = Date.now().toString(36) + Math.floor(rng() * 999);
-      const cl = seedClimate(seed);
-      const CN = {
+      const cl = worldClimate;
+      if (countryMode) { worldName = countryMode.n; }
+      const CN = countryMode ? null : {
         1: [['Жёлтые', 'Выжженные', 'Красные', 'Затерянные', 'Горячие', 'Медные'], ['Пески', 'Барханы', 'Дюны', 'Солончаки']],
         2: [['Гнилые', 'Мшистые', 'Туманные', 'Зелёные', 'Квакающие'], ['Топи', 'Трясина', 'Болота', 'Заводь']],
         3: [['Тёмная', 'Дремучая', 'Волчья', 'Еловая', 'Безмолвная'], ['Чаща', 'Глушь', 'Пуща', 'Бор']],
@@ -3122,7 +3160,7 @@ function saveGame() {
       else worldName = WN_ADJ[Math.floor(rng() * WN_ADJ.length)] + ' ' + WN_NOUN[Math.floor(rng() * WN_NOUN.length)];
     }
     const data = {
-      v: 2, mode, seed, simTime, worldName,
+      v: 2, mode, seed, simTime, worldName, country: countryKey || '',
       player: (mode === 'life' && P && !P.dead) ? {
         gender: P.gender, bodyIdx: P.bodyIdx, name: P.name || '', partnerId: P.partnerId || 0,
         chats: P.chats || {}, x: P.x, y: P.y,
@@ -3150,7 +3188,7 @@ function saveGame() {
     };
     localStorage.setItem('aikaWorld_' + worldId, JSON.stringify(data));
     const reg = worldsRegistry();
-    const entry = { id: worldId, name: worldName, mode: mode === 'life' ? 'life' : 'obs', day: Math.floor(simTime / DAY_LEN), era: era(), pop: villagers.length, at: Date.now() };
+    const entry = { id: worldId, name: worldName, mode: mode === 'life' ? 'life' : 'obs', day: Math.floor(simTime / DAY_LEN), era: era(), pop: villagers.length, at: Date.now(), cn: countryKey || '' };
     const i = reg.findIndex(r => r.id === worldId);
     if (i >= 0) reg[i] = entry; else reg.push(entry);
     saveRegistry(reg);
@@ -3164,7 +3202,8 @@ function restoreWorld(raw) {
     if (mode === 'life' && d.player) restoreLifePlayer(d.player);
     if (mode !== 'life') hideLifeHud();
     seed = d.seed;
-    genWorld(d.seed);
+    countryKey = d.country || '';
+    genWorld(d.seed, countryKey);
     objects.length = 0; objAt.clear(); huts.length = 0; farms.length = 0;
     monsters.length = 0; villagers.length = 0; regrowQueue.length = 0;
     for (const o of d.objects) {
