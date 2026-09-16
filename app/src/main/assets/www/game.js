@@ -2681,7 +2681,7 @@ function restoreWorld(raw) {
 }
 function loadWorld(id) {
   let raw = null;
-  try { raw = localStorage.getItem('aikaWorld_' + id); } catch (e) {}
+  try { raw = localStorage.getItem('aikaWorld_' + id); } catch (e) { console.error('restoreWorld error:', e); return false; }
   if (!raw) return false;
   worldId = id;
   const meta = worldsRegistry().find(r => r.id === id);
@@ -2693,7 +2693,7 @@ function openWorld(id) {
     inMenu = false; menuScene = false;
     document.getElementById('mainMenu').style.display = 'none';
     document.getElementById('topbar').style.display = 'flex';
-    document.getElementById('chronicle').style.display = 'block';
+    document.getElementById('chronWrap').style.display = 'block';
   } else {
     deleteWorld(id);
   }
@@ -2709,7 +2709,7 @@ function showMainMenu() {
   inMenu = true; menuScene = true;
   hideLifeHud();
   document.getElementById('topbar').style.display = 'none';
-  document.getElementById('chronicle').style.display = 'none';
+  document.getElementById('chronWrap').style.display = 'none';
   document.getElementById('villagerPanel').style.display = 'none';
   selected = null; selectedObj = null; selectedEnt = null;
   migrateLegacySave();
@@ -2739,7 +2739,7 @@ function startNewGame() {
   document.getElementById('mainMenu').style.display = 'none';
   document.getElementById('intro').style.display = 'flex';
   document.getElementById('topbar').style.display = 'flex';
-  document.getElementById('chronicle').style.display = 'block';
+  document.getElementById('chronWrap').style.display = 'block';
 }
 function showPauseMenu() {
   saveGame();
@@ -2994,7 +2994,7 @@ function startLifeGame(gender) {
   document.getElementById('lifeIntro').style.display = 'none';
   document.getElementById('intro').style.display = 'none';
   document.getElementById('topbar').style.display = 'flex';
-  document.getElementById('chronicle').style.display = 'block';
+  document.getElementById('chronWrap').style.display = 'block';
   showLifeHud();
   updateLifeHud();
 }
@@ -3040,21 +3040,29 @@ function updateLifeHud() {
   document.getElementById('lhHunger').style.width = Math.max(0, P.hunger) / 100 * 100 + '%';
   document.getElementById('lhHpN').textContent = Math.ceil(Math.max(0, P.hp)) + '/20';
   document.getElementById('lhHungerN').textContent = Math.ceil(Math.max(0, P.hunger)) + '%';
-  const I = P.inv;
-  let inv = '';
-  inv += `<span class="lhi">🪵${I.wood}</span>`;
-  inv += `<span class="lhi">🪨${I.stone}</span>`;
-  inv += `<span class="lhi">🫐${I.berries}</span>`;
-  if (I.meat) inv += `<span class="lhi">🍖${I.meat}</span>`;
-  if (I.ore) inv += `<span class="lhi">⛏️${I.ore}</span>`;
-  if (I.bronze) inv += `<span class="lhi">🟠${I.bronze}</span>`;
-  if (I.arrows) inv += `<span class="lhi">🏹${I.arrows}</span>`;
-  if (I.bullets) inv += `<span class="lhi">🥃${I.bullets}</span>`;
-  if (P.knows.gun) inv += `<span class="lhi">📚порох</span>`;
-  if (P.knows.auto) inv += `<span class="lhi">📚авто</span>`;
-  inv += `<span class="lhi" style="color:#e8c874">${WEAPON_NAMES[P.weapon]}${P.axe ? ' 🪓' : ''}</span>`;
-  document.getElementById('lhInv').innerHTML = inv;
   document.getElementById('btnSleepHud').textContent = P.asleep ? '☀️ Проснуться' : '😴 Спать';
+  renderInventory();
+}
+const INV_ITEMS = [
+  ['wood', '🪵 Дерево'], ['stone', '🪨 Камень'], ['berries', '🫐 Ягоды'], ['meat', '🍖 Мясо'],
+  ['ore', '⛏️ Руда'], ['bronze', '🟠 Бронза'], ['arrows', '🏹 Стрелы'], ['bullets', '🥃 Пули']
+];
+function renderInventory() {
+  if (mode !== 'life' || !P) return;
+  const I = P.inv;
+  let html = '';
+  for (const [k, label] of INV_ITEMS) {
+    const n = I[k] || 0;
+    html += `<div class="inv-cell${n ? '' : ' zero'}"><span>${label}</span><span class="inv-n">${n}</span></div>`;
+  }
+  html += `<div class="inv-cell wide" style="justify-content:space-between"><span>⚔️ Оружие</span><span style="color:#e8c874;font-weight:700">${WEAPON_NAMES[P.weapon]}</span></div>`;
+  html += P.axe ? '<div class="inv-cell wide" style="justify-content:space-between"><span>🪓 Топор</span><span style="color:#3fbf7f;font-weight:700">есть</span></div>' : '';
+  if (P.knows.gun) html += '<div class="inv-cell wide" style="justify-content:space-between"><span>📚 Знания</span><span style="color:#9aa4c0">порох' + (P.knows.auto ? ', авто-оружие' : '') + '</span></div>';
+  if (P.partnerId) {
+    const pv = villagers.find(v => v.id === P.partnerId);
+    if (pv) html += `<div class="inv-cell wide" style="justify-content:space-between"><span>💞 Пара</span><span style="color:#ff8fa8;font-weight:700">${pv.name}</span></div>`;
+  }
+  document.getElementById('invGrid').innerHTML = html;
 }
 
 // ── смерть и воскрешение ──
@@ -3861,6 +3869,25 @@ document.getElementById('btnCraft').onclick = () => {
   lifeOpenCraft();
 };
 document.getElementById('btnCraftClose').onclick = () => { document.getElementById('craftMenu').style.display = 'none'; };
+document.getElementById('btnInv').onclick = () => {
+  renderInventory();
+  document.getElementById('invMenu').style.display = 'flex';
+};
+document.getElementById('invClose').onclick = () => { document.getElementById('invMenu').style.display = 'none'; };
+(function () {
+  const wrap = document.getElementById('chronWrap');
+  const btn = document.getElementById('btnChron');
+  const head = document.getElementById('chronHead');
+  let hid = false;
+  try { hid = localStorage.getItem('aikaChronHide') === '1'; } catch (e) {}
+  const apply = () => {
+    wrap.classList.toggle('collapsed', hid);
+    btn.textContent = hid ? '▸' : '▾';
+  };
+  apply();
+  btn.onclick = e => { e.stopPropagation(); hid = !hid; try { localStorage.setItem('aikaChronHide', hid ? '1' : '0'); } catch (e2) {} apply(); };
+  head.onclick = () => { hid = !hid; try { localStorage.setItem('aikaChronHide', hid ? '1' : '0'); } catch (e2) {} apply(); };
+})();
 document.getElementById('btnSleepHud').onclick = () => {
   if (!P || P.dead) return;
   if (P.asleep) { P.asleep = false; lifeBubble('Ты проснулся.'); }

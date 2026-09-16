@@ -37,10 +37,16 @@
   .btn:active { background: rgba(60,70,110,0.95); }
 
   /* хроника */
-  #chronicle { position: fixed; left: max(10px, env(safe-area-inset-left)); bottom: max(10px, env(safe-area-inset-bottom)); width: min(320px, 72vw);
-    max-height: 34vh; overflow-y: auto; z-index: 10; pointer-events: auto;
+  #chronWrap { position: fixed; left: max(10px, env(safe-area-inset-left)); bottom: max(10px, env(safe-area-inset-bottom));
+    width: min(320px, 72vw); z-index: 10; pointer-events: auto;
     background: rgba(16,19,30,0.88); border: 1px solid rgba(90,100,130,0.22);
-    border-radius: 12px; padding: 10px; font-size: 12px; backdrop-filter: blur(6px); }
+    border-radius: 12px; backdrop-filter: blur(6px); }
+  #chronHead { display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 10px 2px; font-size: 11px; color: #9aa4c0; cursor: pointer; user-select: none; }
+  #btnChron { background: none; border: none; color: #9aa4c0; font-size: 14px;
+    padding: 0 2px; cursor: pointer; line-height: 1; }
+  #chronicle { max-height: 30vh; overflow-y: auto; padding: 2px 10px 8px; font-size: 12px; }
+  #chronWrap.collapsed #chronicle { display: none; }
   .chron-item { padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.04); line-height: 1.35; }
   .chron-icon { margin-right: 5px; }
   .chron-time { color: #7c8cff; font-size: 11px; margin-right: 5px; }
@@ -134,16 +140,22 @@
   /* life-режим */
   #lifeHud { position: fixed; bottom: max(10px, env(safe-area-inset-bottom)); left: 50%;
     transform: translateX(-50%); z-index: 12; display: none; flex-direction: column;
-    align-items: center; gap: 7px; pointer-events: auto; width: min(340px, 92vw); }
+    align-items: center; gap: 5px; pointer-events: auto; width: min(340px, 92vw); }
   .lh-bars { width: 100%; background: rgba(16,19,30,0.88); border: 1px solid rgba(90,100,130,0.22);
-    border-radius: 12px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
-  .lh-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-  .lh-row .bar { flex: 1; }
-  .lh-num { color: #9aa4c0; font-size: 11px; min-width: 38px; text-align: right; }
-  #lhInv { background: rgba(16,19,30,0.88); border: 1px solid rgba(90,100,130,0.22);
-    border-radius: 12px; padding: 7px 10px; font-size: 12.5px; display: flex; gap: 9px;
-    flex-wrap: wrap; justify-content: center; }
-  #lhInv .lhi { display: flex; gap: 3px; align-items: center; }
+    border-radius: 10px; padding: 4px 8px; display: flex; flex-direction: row; gap: 10px; }
+  .lh-row { display: flex; align-items: center; gap: 5px; font-size: 11px; flex: 1; }
+  .lh-row .bar { flex: 1; height: 6px; }
+  .lh-num { color: #9aa4c0; font-size: 10px; min-width: 30px; text-align: right; }
+  #invMenu { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center;
+    justify-content: center; background: rgba(8,10,20,0.55); }
+  #invMenu .intro-card { max-width: 340px; width: 90%; padding: 16px 14px; }
+  #invGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin: 10px 0; text-align: left; }
+  .inv-cell { background: rgba(124,140,255,0.1); border: 1px solid rgba(124,140,255,0.25);
+    border-radius: 10px; padding: 8px 10px; font-size: 12.5px; display: flex;
+    justify-content: space-between; align-items: center; }
+  .inv-cell.zero { opacity: 0.38; }
+  .inv-cell.wide { grid-column: 1 / -1; }
+  .inv-n { font-weight: 700; font-size: 15px; }
   #lhBtns { display: flex; gap: 6px; }
   #lifeAct { position: fixed; bottom: max(10px, env(safe-area-inset-bottom)); left: 50%;
     transform: translateX(-50%); z-index: 13; background: rgba(18,21,34,0.95);
@@ -165,10 +177,13 @@
   .craft-btn:not(:disabled):active { opacity: 0.8; }
   .owned { color: #3fbf7f; font-weight: 700; font-size: 12px; flex: none; }
 
-  body.lifeMode #chronicle { max-height: 22vh; bottom: 148px; }
+  body.lifeMode #chronWrap { bottom: 118px; }
+  body.lifeMode #chronicle { max-height: 16vh; }
   body.lifeMode #villagerPanel { display: none !important; }
   @media (max-width: 640px) {
-    body.lifeMode #chronicle { max-height: 16vh; bottom: 156px; width: min(240px, 58vw); }
+    body.lifeMode #chronWrap { bottom: 126px; width: min(240px, 58vw); }
+    body.lifeMode #chronicle { max-height: 14vh; }
+    #chronWrap { width: min(260px, 62vw); }
     #stats { font-size: 11px; padding: 6px 9px; }
     #chronicle { max-height: 24vh; width: min(260px, 62vw); }
   }
@@ -190,7 +205,10 @@
   </div>
 </div>
 
-<div id="chronicle"></div>
+<div id="chronWrap">
+  <div id="chronHead"><span>📜 Хроника</span><button id="btnChron" title="Свернуть/развернуть">▾</button></div>
+  <div id="chronicle"></div>
+</div>
 <div id="villagerPanel"></div>
 
 <div id="mainMenu" style="display:none">
@@ -200,7 +218,7 @@
     <div id="worldsList"></div>
     <button id="btnNewLife" class="menu-primary" style="background:linear-gradient(135deg,#3fbf7f,#1f9d60);">🌱 НОВАЯ ЖИЗНЬ — сыграй за жителя</button>
     <button id="btnNewGame" class="menu-secondary">🔥 МИР-НАБЛЮДЕНИЕ</button>
-    <div class="menu-foot">v3.7 · ЖИЗНЬ · стройка · живой мозг · чат · романтика · миров до 12</div>
+    <div class="menu-foot">v3.8 · ЖИЗНЬ · стройка · ИИ-чат · романтика · инвентарь · миров до 12</div>
   </div>
 </div>
 
@@ -250,6 +268,14 @@
   </div>
 </div>
 
+<div id="invMenu" style="display:none">
+  <div class="intro-card">
+    <div class="intro-title" style="font-size:19px">🎒 Инвентарь</div>
+    <div id="invGrid"></div>
+    <button id="invClose" class="menu-secondary" style="margin-top:6px;width:100%">Закрыть</button>
+  </div>
+</div>
+
 <div id="craftMenu" style="display:none">
   <div class="intro-card" style="max-width: 360px; max-height: 86vh; overflow-y: auto;">
     <div class="intro-title" style="font-size:20px">🎒 КРАФТ</div>
@@ -274,9 +300,9 @@
     <div class="lh-row"><span>❤️</span><div class="bar"><div class="bar-fill" id="lhHp" style="background:#e05555"></div></div><span class="lh-num" id="lhHpN"></span></div>
     <div class="lh-row"><span>🍖</span><div class="bar"><div class="bar-fill" id="lhHunger" style="background:#d8973c"></div></div><span class="lh-num" id="lhHungerN"></span></div>
   </div>
-  <div id="lhInv"></div>
   <div id="lhBtns">
-    <button class="btn" id="btnCraft">🎒 Крафт</button>
+    <button class="btn" id="btnInv">🎒 Инвентарь</button>
+    <button class="btn" id="btnCraft">🔨 Крафт</button>
     <button class="btn" id="btnSleepHud">😴 Спать</button>
     <button class="btn" id="btnLifeHelp">❔</button>
   </div>
@@ -300,6 +326,6 @@
   </div>
 </div>
 
-<script src="game.js?v=37"></script>
+<script src="game.js?v=38"></script>
 </body>
 </html>
