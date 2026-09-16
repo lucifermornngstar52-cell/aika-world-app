@@ -2900,6 +2900,134 @@ document.getElementById('btnIntro').onclick = () => {
 // ── Главный цикл ───────────────────────────────────────────────────
 let lastT = performance.now();
 let statT = 0, panelT = 0;
+
+// ===== ЗВУКИ МИРА: процедурный WebAudio =====
+let AC = null, master = null, sfxOn = (() => { try { return localStorage.getItem('aikaSfx') !== '0'; } catch (e) { return true; } })();
+const audState = { buf: null, windG: null, rainG: null, croakT: 4, cricketT: 2, howlT: 18, stepT: 0 };
+function audioCtx() {
+  if (typeof AudioContext === 'undefined' && typeof webkitAudioContext === 'undefined') return null;
+  if (!AC) {
+    try {
+      AC = new (window.AudioContext || window.webkitAudioContext)();
+      master = AC.createGain(); master.gain.value = sfxOn ? 1 : 0;
+      master.connect(AC.destination);
+    } catch (e) { return null; }
+  }
+  if (AC.state === 'suspended') { try { AC.resume(); } catch (e) {} }
+  return AC;
+}
+function noiseBuf(ac) {
+  if (audState.buf) return audState.buf;
+  const b = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+  const d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  audState.buf = b;
+  return b;
+}
+function ensureLoops(ac) {
+  if (audState.windG) return;
+  // ветер: низкий шум
+  const ws = ac.createBufferSource(); ws.buffer = noiseBuf(ac); ws.loop = true;
+  const wf = ac.createBiquadFilter(); wf.type = 'lowpass'; wf.frequency.value = 380;
+  audState.windG = ac.createGain(); audState.windG.gain.value = 0;
+  ws.connect(wf); wf.connect(audState.windG); audState.windG.connect(master); ws.start();
+  // дождь: высокий шипящий шум
+  const rs = ac.createBufferSource(); rs.buffer = noiseBuf(ac); rs.loop = true; rs.playbackRate.value = 1.3;
+  const rf = ac.createBiquadFilter(); rf.type = 'bandpass'; rf.frequency.value = 2600; rf.Q.value = 0.6;
+  audState.rainG = ac.createGain(); audState.rainG.gain.value = 0;
+  rs.connect(rf); rf.connect(audState.rainG); audState.rainG.connect(master); rs.start();
+}
+function sfxTone(type, f0, f1, dur, gain, when) {
+  const ac = audioCtx(); if (!ac) return;
+  const t = ac.currentTime + (when || 0);
+  const o = ac.createOscillator(); o.type = type;
+  o.frequency.setValueAtTime(f0, t);
+  if (f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(gain, t + Math.min(0.05, dur * 0.3));
+  g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+  o.connect(g); g.connect(master);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+function sfxNoise(dur, freq, gain) {
+  const ac = audioCtx(); if (!ac) return;
+  const t = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noiseBuf(ac);
+  const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = 1.1;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(gain, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  s.connect(f); f.connect(g); g.connect(master);
+  s.start(t); s.stop(t + dur + 0.02);
+}
+function croak() { // болото: кваканье
+  const n = 2 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < n; i++) sfxTone('sawtooth', 85 + Math.random() * 55, 80 + Math.random() * 50, 0.16, 0.05, i * 0.22);
+}
+function cricket() { // ночь: сверчки
+  const n = 2 + Math.floor(Math.random() * 2);
+  for (let i = 0; i < n; i++) sfxTone('square', 4300 + Math.random() * 400, 4300, 0.035, 0.012, i * 0.07);
+}
+function wolfHowl() { // вой волка в ночи
+  sfxTone('sine', 340, 620, 0.9, 0.04, 0);
+  sfxTone('sine', 620, 290, 0.9, 0.035, 0.9);
+}
+function crunch() { // хруст снега под ногами
+  sfxNoise(0.07, 1900 + Math.random() * 700, 0.05);
+}
+function thunder() { // гром
+  sfxNoise(1.4, 140, 0.16);
+  sfxNoise(0.9, 90, 0.12, 0.1);
+}
+function updateAudio(dt) {
+  if (!sfxOn) return;
+  const ac = audioCtx(); if (!ac) return;
+  ensureLoops(ac);
+  const night = nightAmount();
+  // ветер по погоде
+  let wind = 0.012 + night * 0.02;
+  if (weather.kind === 'blizzard') wind = 0.15;
+  else if (weather.kind === 'snow') wind = 0.06;
+  else if (weather.kind === 'fog') wind = 0.025;
+  const gust = 0.72 + 0.28 * Math.sin(simTime * 0.6) * Math.sin(simTime * 0.23 + 1.3);
+  audState.windG.gain.setTargetAtTime(wind * gust, ac.currentTime, 0.4);
+  // дождь / туман
+  const rain = weather.rain ? 0.09 : (weather.kind === 'fog' ? 0.018 : 0);
+  audState.rainG.gain.setTargetAtTime(rain, ac.currentTime, 0.6);
+  // кваканье на болотах
+  audState.croakT -= dt;
+  if (worldClimate === 2 && audState.croakT <= 0) { croak(); audState.croakT = 1.5 + Math.random() * 6; }
+  // сверчки ночью (не в снегах)
+  audState.cricketT -= dt;
+  if (night > 0.6 && worldClimate !== 5 && audState.cricketT <= 0) { cricket(); audState.cricketT = 0.9 + Math.random() * 2.5; }
+  // вой волка ночью, если волки рядом есть
+  audState.howlT -= dt;
+  if (night > 0.7 && audState.howlT <= 0) {
+    if (animals.some(a => a.kind === 'wolf' && a.hp > 0)) wolfHowl();
+    audState.howlT = 22 + Math.random() * 35;
+  }
+  // хруст снега: шаги игрока в снежном мире
+  if (mode === 'life' && P && !P.dead && !P.asleep && worldClimate === 5 && P.path && P.pathIdx < P.path.length) {
+    audState.stepT -= dt;
+    if (audState.stepT <= 0) { crunch(); audState.stepT = 0.27; }
+  }
+}
+function ensureSndBtn() {
+  if (document.getElementById('sndBtn')) return;
+  const b = document.createElement('button');
+  b.id = 'sndBtn';
+  b.textContent = sfxOn ? '🔊' : '🔇';
+  b.style.cssText = 'position:fixed;top:44px;right:8px;z-index:60;width:34px;height:34px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(20,24,44,.82);color:#fff;font-size:15px;cursor:pointer';
+  b.onclick = () => {
+    sfxOn = !sfxOn;
+    try { localStorage.setItem('aikaSfx', sfxOn ? '1' : '0'); } catch (e) {}
+    if (master) master.gain.value = sfxOn ? 1 : 0;
+    b.textContent = sfxOn ? '🔊' : '🔇';
+  };
+  document.body.appendChild(b);
+}
+
 function loop(now) {
   llmTick((now - lastT) / 1000);
   let dt = Math.min(0.1, (now - lastT) / 1000);
@@ -2908,6 +3036,7 @@ function loop(now) {
     const sdt = Math.min(0.25, dt * simSpeed);
     updateSim(sdt);
   }
+  try { updateAudio(dt); ensureSndBtn(); } catch (e) {}
   draw();
   statT += dt;
   if (statT > 0.5) { statT = 0; updateStats(); }
