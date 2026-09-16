@@ -7,8 +7,8 @@ android {
     applicationId "com.aika.world"
     minSdk 24
     targetSdk 34
-    versionCode 14
-    versionName "1.12"
+    versionCode 15
+    versionName "1.13"
   }
   buildTypes {
     release { minifyEnabled false }
