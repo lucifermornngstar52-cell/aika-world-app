@@ -856,7 +856,7 @@ const DESERT_THOUGHTS = [
 const SWAMP_THOUGHTS = ['Хлюп… хлюп… ноги по колено в топи.', 'Комары сегодня злее волков.', 'Мангры держат землю — не утонем.', 'Туман над болотом, хоть факел бери.', 'В трясине что-то булькает. Не хочу знать что.', 'Камшиш хрустит под ногами.', 'Тут каждая тропа — на удачу.'];
 const DARK_THOUGHTS = ['Лес такой густой — солнце не видно.', 'Тихо… слишком тихо.', 'Здесь грибы растут выше колена.', 'Ели давят со всех сторон.', 'В темноте между стволами кто-то смотрит.', 'Хорошо, что мы вместе.', 'Мрак кругом, а костёр — наш маяк.'];
 const CHERRY_THOUGHTS = ['Лепестки летят, как снег вишнёвый.', 'Какая красота вокруг!', 'Пахнет мёдом и цветами.', 'Розовый вечер… сердце поёт.', 'Из этих деревьев выйдут самые красивые дома.', 'Пчёлы тут счастливее нас.'];
-const SNOW_THOUGHTS = ['Хрустит под ногами — только мой след.', 'Видишь пар от дыхания? Мы живы.', 'Ноги мёрзнут, но очаг ждёт.', 'За белой мглой — целая тундра.', 'Олени уводят нас за собой.', 'Снег засыпает все тропы. Идем по звёздам.', 'Мороз щиплет щёки — бодрит!'];
+const SNOW_THOUGHTS = ['Буран — к костру, это закон тундры.', 'Хрустит под ногами — только мой след.', 'Видишь пар от дыхания? Мы живы.', 'Ноги мёрзнут, но очаг ждёт.', 'За белой мглой — целая тундра.', 'Олени уводят нас за собой.', 'Снег засыпает все тропы. Идем по звёздам.', 'Мороз щиплет щёки — бодрит!'];
 const BIOME_THOUGHTS = { 1: DESERT_THOUGHTS, 2: SWAMP_THOUGHTS, 3: DARK_THOUGHTS, 4: CHERRY_THOUGHTS, 5: SNOW_THOUGHTS };
 const TRAIT_THOUGHTS = {
   hardworking: {
@@ -1074,6 +1074,8 @@ function decide(v) {
     return;
   }
   if (v.isChild) { decideChild(v, night, n); return; }
+  // буран: выживание важнее работы — все к огню и под крыши
+  if (worldClimate === 5 && weather.kind === 'blizzard' && v.state !== 'warm' && v.state !== 'goto_warm' && !isWarm(v)) { startWarm(v); return; }
   if (pendingBuild && !pendingBuild.assigned && !night) { startBuild(v); return; }
   if (n.hunger < 32) { startEat(v); return; }
   if (n.energy < 22 || (night && n.energy < 70)) { startSleep(v); return; }
@@ -1122,6 +1124,7 @@ function decide(v) {
   startWander(v);
 }
 function decideChild(v, night, n) {
+  if (worldClimate === 5 && weather.kind === 'blizzard' && !isWarm(v) && v.state !== 'warm' && v.state !== 'goto_warm') { startWarm(v); return; }
   if (n.hunger < 35) { startEat(v); return; }
   if (n.energy < 30 || night) { startSleep(v); return; }
   if (v.carry.berries > 0) { startDeposit(v); return; }
@@ -1213,8 +1216,13 @@ function startSocial(v, partner) {
   think(v, pickThought(v, 'social'));
 }
 function startWander(v) {
+  const blz = worldClimate === 5 && weather.kind === 'blizzard';
   for (let tries = 0; tries < 10; tries++) {
-    const x = Math.floor(v.x + (rng() * 21) - 10), y = Math.floor(v.y + (rng() * 21) - 10);
+    let x, y;
+    if (blz) { // в буран гуляем только вокруг костра
+      const a = rng() * Math.PI * 2, r2 = 1 + rng() * 2;
+      x = Math.floor(campfire.x + Math.cos(a) * r2); y = Math.floor(campfire.y + Math.sin(a) * r2);
+    } else { x = Math.floor(v.x + (rng() * 21) - 10); y = Math.floor(v.y + (rng() * 21) - 10); }
     if (walkable(x, y)) {
       const p = astar(v.x, v.y, x, y);
       if (p) { v.path = p; v.pathIdx = 0; v.state = 'wander'; think(v, pickThought(v, 'wander')); return; }
@@ -1232,6 +1240,17 @@ function startBuild(v) {
 function startFight(v, m) {
   v.state = 'fight'; v.fightId = m.id; v.repathT = 0;
   think(v, pickThought(v, 'fight'));
+}
+function isWarm(v) {
+  if (dist(v.x, v.y, campfire.x, campfire.y) < 3.5) return true;
+  return homes().some(h => Math.abs(Math.floor(v.x) - h.x) <= 1 && Math.abs(Math.floor(v.y) - h.y) <= 1);
+}
+function startWarm(v) {
+  const t = approachTile(v, campfire.x, campfire.y) || { x: campfire.x, y: campfire.y + 1 };
+  v.path = astar(v.x, v.y, t.x, t.y);
+  v.pathIdx = 0;
+  v.state = 'goto_warm';
+  if (rng() < 0.6) think(v, pick(['Буран! Бегом к костру!', 'Все к огню — иначе замёрзнем!', 'Домой, к теплу!', 'Снег залепляет глаза — к огню!']));
 }
 function startFlee(v) {
   const hm = homes(); const home = hm.length ? hm[v.id % hm.length] : campfire;
@@ -1644,10 +1663,18 @@ function killVillager(v, by) {
   addObject('grave', Math.floor(v.x), Math.floor(v.y));
   SIM.deaths++;
   if (by === 'player') logEvent('💀', `${v.name} убит. Могила молчаливо ждёт ответа.`);
+  else if (by === 'cold') logEvent('🥶', `${v.name} не дошёл${v.isChild ? '' : (v.gender === 'f' ? 'а' : '')} до огня и замёрз${v.gender === 'f' ? 'ла' : ''} в буран. Деревня скорбит…`);
   else logEvent('😢', `${v.name} погиб${v.isChild ? '' : ' как герой'}, защищая деревню. Деревня скорбит…`);
 }
 
 function updateVillager(v, dt) {
+  // мороз в буран: кто не у огня и не в доме — замерзает
+  if (worldClimate === 5 && weather.kind === 'blizzard' && !v.isChild) {
+    if (!isWarm(v)) {
+      v.hp -= 0.05 * dt;
+      if (v.hp <= 0) { killVillager(v, 'cold'); return; }
+    }
+  }
   const n = v.needs;
   const working = ['chop', 'forage', 'goto_chop', 'goto_forage', 'goto_build', 'build', 'goto_harvest', 'harvest'].includes(v.state);
   n.hunger = Math.max(0, n.hunger - dt * 0.09);
@@ -1913,6 +1940,17 @@ function updateVillager(v, dt) {
     case 'eat': {
       v.workT -= dt;
       if (v.workT <= 0) { v.state = 'idle'; v.decideT = 0.4; }
+      break;
+    }
+    case 'goto_warm': {
+      v.state = 'warm'; v.workT = 4 + rng() * 4;
+      if (rng() < 0.5) think(v, pick(['У огня жизнь теплее.', 'Погреться — святое дело.', 'Метель воет, а мы живы.', 'Тепло… Пока тепло.']));
+      break;
+    }
+    case 'warm': {
+      // греются у костра, пока не кончится буран
+      v.workT -= dt;
+      if (v.workT <= 0 || weather.kind !== 'blizzard') { v.state = 'idle'; v.decideT = 0.5; }
       break;
     }
     case 'goto_sleep': {
