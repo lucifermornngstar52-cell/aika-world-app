@@ -3589,6 +3589,17 @@ function eatInv(k) {
   else { P.hunger = Math.min(100, P.hunger + 14); P.hp = Math.min(20, P.hp + 1); lifeBubble('Сладко! +14 сытости'); }
   renderInventory(); updateLifeHud();
 }
+function takeInv(k) {
+  if (mode !== 'life' || !P || P.dead) return;
+  const amt = Math.min(10, stocks[k] || 0);
+  if (amt <= 0) return;
+  stocks[k] -= amt;
+  P.inv[k] = (P.inv[k] || 0) + amt;
+  const what = { wood: 'дерева 🪵', stone: 'камня 🪨', berries: 'ягод 🫐', ore: 'руды ⛏️' }[k] || k;
+  logEvent('📦', `Ты взял${P.gender === 'f' ? 'а' : ''} из общего котла ${amt} ${what}.`);
+  lifeBubble('Взято!');
+  renderInventory(); updateLifeHud();
+}
 function giveInv(k) {
   if (mode !== 'life' || !P || P.dead) return;
   const amt = Math.min(10, P.inv[k] || 0);
@@ -3611,8 +3622,11 @@ function renderInventory() {
     let act = '';
     if (n > 0 && (k === 'berries' || k === 'meat')) act = invBtn(`eatInv('${k}')`, 'Съесть', '#3fbf7f');
     else if (n > 0 && (k === 'wood' || k === 'stone')) act = invBtn(`giveInv('${k}')`, 'Деревне ×10', '#8a6fd8');
-    html += `<div class="inv-cell${n ? '' : ' zero'}" style="grid-column:span 2"><span>${label}</span><span class="inv-n">${n}</span>${act}</div>`;
+    const stk = { wood: 1, stone: 1, berries: 1, ore: 1 }[k] ? (stocks[k] || 0) : null;
+    const tk = stk > 0 ? invBtn(`takeInv('${k}')`, 'Взять ×10', '#3fa8bf') : '';
+    html += `<div class="inv-cell${n || stk ? '' : ' zero'}" style="grid-column:span 2"><span>${label}</span><span class="inv-n">${n}</span>${act}${tk}</div>`;
   }
+  html += '<div class="inv-cell wide" style="justify-content:space-between;opacity:.85"><span>Общий котёл деревни</span><span class="inv-n" style="font-size:11px">' + (stocks.wood || 0) + '🪵 ' + (stocks.stone || 0) + '🪨 ' + (stocks.berries || 0) + '🫐 ' + (stocks.ore || 0) + '⛏️ ' + (stocks.iron || 0) + '🟫 ' + (stocks.steel || 0) + '⚙️</span></div>';
   html += `<div class="inv-cell wide" style="justify-content:space-between"><span>⚔️ Оружие</span><span style="color:#e8c874;font-weight:700">${WEAPON_NAMES[P.weapon]}</span></div>`;
   html += P.axe ? '<div class="inv-cell wide" style="justify-content:space-between"><span>🪓 Топор</span><span style="color:#3fbf7f;font-weight:700">есть</span></div>' : '';
   html += `<div class="inv-cell wide" style="justify-content:space-between"><span>🧥 Одежда</span><span style="color:${P.coat ? '#3fbf7f' : '#9aa4c0'};font-weight:700">${P.coat ? 'меховая шуба ✔' : 'нет — в метели холодно!'}</span></div>`;
