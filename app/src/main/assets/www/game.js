@@ -784,7 +784,7 @@ function makeVillager(x, y) {
     needs: { hunger: 70 + rng() * 30, energy: 70 + rng() * 30, social: 50 + rng() * 40 },
     skill: { chop: 1, forage: 1, combat: 1 },
     hp: 20, tool: null, spear: false,
-    isChild: false, growAt: 0,
+    isChild: false, growAt: 0, relP: Math.floor(rng() * 8), pregUntil: 0,
     thought: '', thoughtUntil: 0, thoughts: [],
     home: null, decideT: rng() * 2,
     threatT: 0, atkT: 0, fightId: 0, repathT: 0, huntId: 0,
@@ -802,6 +802,12 @@ function makeChild(a, b) {
   return v;
 }
 
+function makePlayerChild(v) {
+  const c = makeChild(v, v);
+  c.name = 'Малыш ' + ((P && P.name) || 'С')[0] + (v.name[0] || '');
+  c.growAt = simTime + DAY_LEN * 1.4;
+  return c;
+}
 function hasTrait(v, k) { return v.traits.some(t => t.k === k); }
 function think(v, text) {
   v.thought = text;
@@ -2594,7 +2600,8 @@ function saveGame() {
     const data = {
       v: 2, mode, seed, simTime, worldName,
       player: (mode === 'life' && P && !P.dead) ? {
-        gender: P.gender, bodyIdx: P.bodyIdx, x: P.x, y: P.y,
+        gender: P.gender, bodyIdx: P.bodyIdx, name: P.name || '', partnerId: P.partnerId || 0,
+        chats: P.chats || {}, x: P.x, y: P.y,
         hp: P.hp, hunger: P.hunger, inv: { ...P.inv }, weapon: P.weapon, axe: P.axe ? 1 : 0,
         momId: P.mom ? P.mom.id : 0, dadId: P.dad ? P.dad.id : 0,
         homeX: P.home ? P.home.x : -1, homeY: P.home ? P.home.y : -1,
@@ -2612,7 +2619,8 @@ function saveGame() {
         id: v.id, n: v.name, bi: v.bodyIdx, x: v.x, y: v.y,
         ch: v.isChild ? 1 : 0, gr: v.growAt,
         hp: v.hp, tl: v.tool || null, sp: v.spear ? 1 : 0,
-        nd: { ...v.needs }, tr: v.traits.slice(), sk: { ...v.skill }
+        nd: { ...v.needs }, tr: v.traits.slice(), sk: { ...v.skill },
+        rl: v.relP || 0, pg: v.pregUntil || 0
       }))
     };
     localStorage.setItem('aikaWorld_' + worldId, JSON.stringify(data));
@@ -2648,6 +2656,7 @@ function restoreWorld(raw) {
       v.name = sv.n; v.bodyIdx = sv.bi; v.isChild = !!sv.ch; v.growAt = sv.gr;
       v.hp = sv.hp; v.tool = sv.tl; v.spear = !!sv.sp;
       v.needs = sv.nd; v.traits = sv.tr; v.skill = sv.sk;
+      v.relP = sv.rl || 0; v.pregUntil = sv.pg || 0;
       v.state = 'idle'; v.path = null; v.decideT = 1;
       villagers.push(v);
     }
@@ -2953,8 +2962,11 @@ function startLifeGame(gender) {
   const homesList = homes();
   const home = homesList[Math.floor(rng() * homesList.length)] || { x: campfire.x, y: campfire.y };
   const bodyIdx = Math.floor(rng() * spr.bodies.length);
+  const usedNames = villagers.map(v => v.name);
+  const freeN = NAMES.filter(n => !usedNames.includes(n));
+  const pName = freeN.length ? freeN[Math.floor(rng() * freeN.length)] : (gender === 'f' ? 'Аика' : 'Странник');
   P = {
-    gender, bodyIdx,
+    gender, bodyIdx, name: pName, partnerId: 0, chats: {},
     x: home.x + 1.5, y: home.y + 1.5,
     path: null, pathIdx: 0, facing: 1, animT: 0,
     hp: 20, hunger: 85,
@@ -3111,6 +3123,16 @@ function updatePlayer(dt) {
       finishLifeAction(k);
     }
     return;
+  }
+  // роды (партнёрша игрока)
+  for (const v of [...villagers]) {
+    if (v.pregUntil && simTime >= v.pregUntil) {
+      v.pregUntil = 0;
+      const c = makePlayerChild(v);
+      villagers.push(c);
+      logEvent('👶', `У вас с ${v.name} родился ребёнок — ${c.name}!`);
+      lifeBubble('Ты стал' + (P.gender === 'f' ? 'а' : '') + ' родителем!');
+    }
   }
   // голод и регенерация
   P.hunger = Math.max(0, P.hunger - 0.13 * dt);
@@ -3336,11 +3358,21 @@ function startLifeAction(t) {
     case 'popupVil': {
       const v = villagers.find(x => x.id === t.vilId);
       if (!v) { lifeBubble('Уже ушёл.'); break; }
-      showLifePopup('🧑 ' + v.name + (v.traits.length ? ' (' + v.traits.map(x => x.label).join(', ') + ')' : ''), [
+      const hearts = v.isChild ? '🧒' : '❤️'.repeat(Math.max(1, Math.ceil((v.relP || 0) / 25))) + (P.partnerId === v.id ? ' 💞' : '');
+      const btns = [
         { l: '💬 Поговорить', fn: 'lifeTalk(' + v.id + ')' },
-        { l: '🫐 Подарить ягоды (−3)', fn: 'lifeGive(' + v.id + ')' },
-        { l: '⚔️ Атаковать', fn: 'lifeAttackVil(' + v.id + ')', danger: true }
-      ]);
+        { l: '🫐 Подарить ягоды (−3)', fn: 'lifeGive(' + v.id + ')' }
+      ];
+      if (P.inv.meat > 0) btns.push({ l: '🍖 Подарить мясо (−1)', fn: 'lifeGiveMeat(' + v.id + ')' });
+      if (!v.isChild) {
+        const hasPartner = P.partnerId && villagers.some(x => x.id === P.partnerId);
+        if (!hasPartner && (v.relP || 0) >= 50 && P.partnerId !== v.id)
+          btns.push({ l: '💘 Признаться в чувствах', fn: 'lifeConfess(' + v.id + ')' });
+        if (P.partnerId === v.id)
+          btns.push({ l: '❤️ Провести ночь вместе', fn: 'lifeNight(' + v.id + ')' });
+      }
+      btns.push({ l: '⚔️ Атаковать', fn: 'lifeAttackVil(' + v.id + ')', danger: true });
+      showLifePopup((v.isChild ? '🧒 ' : '🧑 ') + v.name + ' ' + hearts + (v.traits.length ? '<div style="font-size:11px;color:#8a94b8">' + v.traits.map(x => x.label).join(', ') + '</div>' : ''), btns);
       break;
     }
   }
@@ -3380,8 +3412,10 @@ function finishLifeAction(k) {
     case 'ore': {
       if (o && o.type === 'mine') {
         const bonus = rng() < 0.12 ? 2 : 1;
+        const stone = 1 + Math.floor(rng() * 3);
         P.inv.ore += bonus;
-        logEvent('⛏️', 'Ты добыл' + (P.gender === 'f' ? 'а' : '') + ' руду в шахте (+' + bonus + ' ⛏️)');
+        P.inv.stone += stone;
+        logEvent('⛏️', 'Ты добыл' + (P.gender === 'f' ? 'а' : '') + ' в шахте: +' + bonus + ' ⛏️ и +' + stone + ' 🪨');
       } else lifeBubble('Здесь больше нечего копать.');
       break;
     }
@@ -3460,11 +3494,149 @@ function lifeSleep() {
   lifeBubble('Спокойной ночи…');
   updateLifeHud();
 }
+// ── живой чат с жителем (LLM) ──
+const CHAT = { v: null, busy: false };
 function lifeTalk(id) {
   const v = villagers.find(x => x.id === id);
   if (!v) return;
-  think(v, pickThought(v, 'social') || 'Хорошего дня!');
-  lifeBubble(v.thought);
+  openChat(v);
+}
+function chatHearts(v) {
+  const rel = v.relP || 0;
+  if (P.partnerId === v.id) return '💞';
+  return '❤️'.repeat(Math.max(1, Math.ceil(rel / 25)));
+}
+function greetingLine(v) {
+  const rel = v.relP || 0;
+  if (P.partnerId === v.id) return 'Привет, любимый мой человек… я как раз думал о тебе ❤️';
+  if (v.isChild) return 'Привет! А ты кто? Меня зовут ' + v.name + '!';
+  if (rel > 60) return 'О, ' + P.name + '! Как же я рад тебя видеть!';
+  if (rel > 30) return 'Привет, ' + P.name + '. Хорошая погода, да?';
+  return 'Привет… Мы, кажется, ещё мало знакомы.';
+}
+function chatBubble(role, text) {
+  const box = document.getElementById('chatMsgs');
+  const div = document.createElement('div');
+  div.className = 'chat-row ' + (role === 'me' ? 'chat-me' : 'chat-vil');
+  div.textContent = text;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+  return div;
+}
+function openChat(v) {
+  CHAT.v = v; CHAT.busy = false;
+  if (!P.chats) P.chats = {};
+  if (!Array.isArray(P.chats[v.id])) P.chats[v.id] = [];
+  document.getElementById('chatTitle').innerHTML = '💬 ' + v.name + ' <span style="font-size:12px">' + chatHearts(v) + '</span>';
+  document.getElementById('chatMsgs').innerHTML = '';
+  if (!P.chats[v.id].length) chatBubble('vil', greetingLine(v));
+  for (const m of P.chats[v.id]) chatBubble(m.r, m.t);
+  document.getElementById('chatInput').value = '';
+  document.getElementById('chatBox').style.display = 'flex';
+}
+function closeChat() {
+  document.getElementById('chatBox').style.display = 'none';
+  CHAT.v = null; CHAT.busy = false;
+}
+function cannedReply() {
+  const lines = ['Ммм, надо подумать…', 'Ты вообще откуда взялся, такой интересный?', 'Сегодня хороший день, правда?', 'Деревня наша растёт — глядишь, и городом станет.', 'Давай к костру сядем, там и поговорим.', 'Ох, дела-дела…', 'А ты смелый, я такое уважаю.', 'Слышал, у шахты камень сыпется — выгодное место.'];
+  return lines[Math.floor(Math.random() * lines.length)];
+}
+async function llmChatReply(v, userText) {
+  if (!LLM.on || !LLM.key) return cannedReply();
+  const traits = v.traits.map(t => t.label).join(', ') || 'обычный';
+  const tod = isNight() ? 'глубокая ночь' : phase() < 0.35 ? 'утро' : phase() < 0.6 ? 'день' : 'вечер';
+  const st = STATE_RU[v.state] || v.state;
+  const rel = v.relP || 0;
+  const bond = P.partnerId === v.id
+    ? `игрок ${P.name} — твоя вторая половинка, вы пара, ты очень его любишь`
+    : rel > 60 ? `игрок ${P.name} — твой близкий друг`
+    : rel > 30 ? `игрок ${P.name} — твой хороший знакомый`
+    : `игрок ${P.name} — человек, которого ты почти не знаешь`;
+  const history = (P.chats[v.id] || []).slice(-8).map(m => ({ role: m.r === 'me' ? 'user' : 'assistant', content: m.t }));
+  const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + LLM.key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: LLM_MODEL,
+      max_tokens: 140,
+      temperature: 0.9,
+      reasoning_effort: 'low',
+      messages: [
+        { role: 'system', content: `Ты — ${v.isChild ? 'ребёнок' : 'житель'} по имени ${v.name} в первобытной деревне (эпоха «${ERAS[era()]}», сейчас ${tod}, ты ${st}). Характер: ${traits}. ${bond}. Отвечай на русском как живой человек: 1-2 коротких предложения от первого лица, по-характеру. Без markdown.` },
+        ...history,
+        { role: 'user', content: userText }
+      ]
+    })
+  });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const d = await r.json();
+  const txt = ((d.choices && d.choices[0] && d.choices[0].message.content) || '').trim();
+  if (!txt) throw new Error('пусто');
+  return txt;
+}
+async function chatSendMsg() {
+  if (!CHAT.v || CHAT.busy || !P || P.dead) return;
+  const inp = document.getElementById('chatInput');
+  const text = inp.value.trim();
+  if (!text) return;
+  const v = CHAT.v;
+  inp.value = '';
+  P.chats[v.id].push({ r: 'me', t: text });
+  chatBubble('me', text);
+  CHAT.busy = true;
+  const typing = chatBubble('vil', '…');
+  let reply;
+  try { reply = await llmChatReply(v, text); }
+  catch (e) { reply = cannedReply(); }
+  CHAT.busy = false;
+  if (!villagers.includes(v)) { typing.textContent = '…'; setTimeout(closeChat, 600); return; }
+  reply = String(reply).slice(0, 240);
+  typing.textContent = reply;
+  const box = document.getElementById('chatMsgs');
+  box.scrollTop = box.scrollHeight;
+  P.chats[v.id].push({ r: 'vil', t: reply });
+  if (P.chats[v.id].length > 16) P.chats[v.id].splice(0, P.chats[v.id].length - 16);
+  v.relP = Math.min(100, (v.relP || 0) + 2);
+  v.needs.social = Math.min(100, v.needs.social + 8);
+  think(v, reply.slice(0, 50));
+  const t2 = document.getElementById('chatTitle');
+  t2.innerHTML = '💬 ' + v.name + ' <span style="font-size:12px">' + chatHearts(v) + '</span>';
+}
+function lifeConfess(id) {
+  const v = villagers.find(x => x.id === id);
+  if (!v || v.isChild) return;
+  if (P.partnerId && villagers.some(x => x.id === P.partnerId)) { lifeBubble('У тебя уже есть любимый человек.'); return; }
+  if ((v.relP || 0) >= 50) {
+    P.partnerId = v.id;
+    v.relP = 100;
+    think(v, 'Моё сердце теперь твоё…');
+    logEvent('💘', `Вы с ${v.name} теперь пара!`);
+    lifeBubble(v.name + ' — теперь твоя вторая половинка 💞');
+  } else {
+    v.relP = Math.max(0, (v.relP || 0) - 5);
+    lifeBubble(v.name + ' смущён(а): «Мы слишком мало знакомы…»');
+  }
+}
+function lifeNight(id) {
+  const v = villagers.find(x => x.id === id);
+  if (!v || P.partnerId !== v.id) return;
+  hideLifePopup();
+  const el = document.getElementById('loveScene');
+  el.style.display = 'flex';
+  requestAnimationFrame(() => { el.style.opacity = '1'; });
+  setTimeout(() => {
+    el.style.opacity = '0';
+    setTimeout(() => { el.style.display = 'none'; }, 900);
+    if (!villagers.includes(v)) return;
+    logEvent('❤️', `Ночь с ${v.name} была тёплой… Дальше — только ваше воображение.`);
+    think(v, 'Какая ночь…');
+    v.relP = 100;
+    if (Math.random() < 0.55) {
+      v.pregUntil = simTime + DAY_LEN * 1.1;
+      logEvent('🤰', `${v.name} чувствует: скоро в семье будет прибавление…`);
+    }
+  }, 2800);
 }
 function lifeGive(id) {
   const v = villagers.find(x => x.id === id);
@@ -3473,8 +3645,21 @@ function lifeGive(id) {
   P.inv.berries -= 3;
   v.needs.hunger = Math.min(100, v.needs.hunger + 30);
   v.needs.social = Math.min(100, v.needs.social + 15);
+  v.relP = Math.min(100, (v.relP || 0) + 6);
   think(v, 'Спасибо! Какие щедрые руки!');
-  lifeBubble(v.name + ' рад подарку');
+  lifeBubble(v.name + ' рад подарку! (симпатия +6)');
+  updateLifeHud();
+}
+function lifeGiveMeat(id) {
+  const v = villagers.find(x => x.id === id);
+  if (!v) return;
+  if (P.inv.meat < 1) { lifeBubble('Нет мяса!'); return; }
+  P.inv.meat--;
+  v.needs.hunger = Math.min(100, v.needs.hunger + 50);
+  v.needs.social = Math.min(100, v.needs.social + 20);
+  v.relP = Math.min(100, (v.relP || 0) + 10);
+  think(v, 'Мясо?! Для меня?! Ты чудо!');
+  lifeBubble(v.name + ' в восторге от такого подарка! (симпатия +10)');
   updateLifeHud();
 }
 function lifeAttackVil(id) {
@@ -3638,6 +3823,7 @@ function drawLifePlayer() {
 function restoreLifePlayer(pd, saved) {
   P = {
     gender: pd.gender, bodyIdx: pd.bodyIdx,
+    name: pd.name || 'Странник', partnerId: pd.partnerId || 0, chats: pd.chats || {},
     x: pd.x, y: pd.y,
     path: null, pathIdx: 0, facing: 1, animT: 0,
     hp: pd.hp, hunger: pd.hunger,
@@ -3665,6 +3851,9 @@ document.getElementById('btnNewLife').onclick = () => {
   document.getElementById('mainMenu').style.display = 'none';
   document.getElementById('lifeIntro').style.display = 'flex';
 };
+document.getElementById('chatSend').onclick = () => chatSendMsg();
+document.getElementById('chatClose').onclick = () => closeChat();
+document.getElementById('chatInput').addEventListener('keydown', e => { if (e.key === 'Enter') chatSendMsg(); });
 document.getElementById('btnLifeF').onclick = () => startLifeGame('f');
 document.getElementById('btnLifeM').onclick = () => startLifeGame('m');
 document.getElementById('btnCraft').onclick = () => {
@@ -3687,6 +3876,8 @@ document.getElementById('btnLifeHelp').onclick = () => {
     { l: '👆 Тап по дереву/кусту/камню/шахте — работать', fn: '0' },
     { l: '🐺 Тап по животному — атаковать (лук бьёт издалека)', fn: '0' },
     { l: '🔥 Тап по костру — еда, подарки деревне, крафт', fn: '0' },
+    { l: '💬 Тап по жителю — ИИ-чат, подарки, симпатия ❤️, при 50+ признание 💘 и дети 👶', fn: '0' },
+    { l: '⛏️ Шахта даёт руду И камень', fn: '0' },
     { l: '🏠 Возле дома можно спать до утра', fn: '0' },
     { l: '🍖 Голод убивает — ешь ягоды и мясо', fn: '0' },
     { l: '⛏️ Руда из шахты → бронза → меч = новая эпоха', fn: '0' }
