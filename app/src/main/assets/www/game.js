@@ -40,7 +40,7 @@ let camX = 0, camY = 0, zoom = 1.6;
 let selected = null;
 let nextId = 1;
 let lastPhase = 0;
-let weather = { rain: false, t: 80, bolt: 0 };
+let weather = { rain: false, kind: 'clear', t: 80, bolt: 0 };
 const regrowQueue = [];
 const SIM = { monsterWaves: 0, monsterKills: 0, deaths: 0, births: 0, harvests: 0, rains: 0 };
 
@@ -231,7 +231,7 @@ function genWorld(s) {
   stocks = { wood: 0, berries: 6, stone: 0 };
   totalWood = 0; pendingBuild = null; settlersSpawned = 0;
   simTime = 0; selected = null; selectedObj = null; selectedEnt = null; lastPhase = 0;
-  weather = { rain: false, t: 60 + rng() * 120, bolt: 0 };
+  weather = { rain: false, kind: 'clear', t: 60 + rng() * 120, bolt: 0 };
   SIM.monsterWaves = 0; SIM.monsterKills = 0; SIM.melted = 0; SIM.deaths = 0; SIM.births = 0; SIM.harvests = 0; SIM.rains = 0;
   renderMapCanvas();
   const climate = [' на зелёных лугах', ' среди бескрайних песков', ' в мангровых болотах', ' в дремучем тёмном лесу', ' в цветущей вишнёвой роще', ' среди снегов и льдов'][clim];
@@ -1051,7 +1051,7 @@ function nightAmount() {
   if (p < 0.2) n = Math.max(n, 1 - p / 0.2);
   return n;
 }
-function rainMult() { return weather.rain ? 2 : 1; }
+function rainMult() { return weather.rain ? 2 : (weather.kind === 'snow' || weather.kind === 'fog') ? 1.5 : 1; }
 
 // ── Решения ──────────────────────────────────────────────────────
 function nearestMonster(v, range) {
@@ -1257,14 +1257,28 @@ function updateSim(dt) {
   // погода
   weather.t -= dt;
   if (weather.t <= 0) {
-    weather.rain = !weather.rain;
-    if (weather.rain) {
-      weather.t = 40 + rng() * 60;
-      SIM.rains++;
-      logEvent('🌧', 'Пошёл дождь. Растения растут быстрее!');
-    } else weather.t = 60 + rng() * 160;
+    let kind = 'clear';
+    const r = rng();
+    if (worldClimate === 5) kind = r < 0.5 ? 'snow' : (r < 0.68 ? 'blizzard' : 'clear');
+    else if (worldClimate === 2) kind = r < 0.38 ? 'fog' : (r < 0.56 ? 'rain' : 'clear');
+    else if (worldClimate === 4) kind = r < 0.35 ? 'petals' : 'clear';
+    else kind = r < 0.45 ? 'rain' : 'clear';
+    if (kind === 'clear') weather.t = 60 + rng() * 140;
+    else weather.t = 40 + rng() * 60;
+    if (kind !== weather.kind) {
+      const MSG = {
+        rain: ['🌧', 'Пошёл дождь. Растения растут быстрее!'],
+        snow: ['❄', 'Пошёл снегопад. Мир замело белым пухом.'],
+        blizzard: ['🌨', 'Метель бьёт в стены хижин! Ветер рвёт крыши.'],
+        fog: ['🌫', 'С топей ползёт туман — ни зги не видно.'],
+        petals: ['🌸', 'Лепестки вишни летят по всей роще.']
+      }[kind];
+      if (MSG) logEvent(MSG[0], MSG[1]);
+    }
+    weather.kind = kind;
+    weather.rain = kind === 'rain';
   }
-  if (weather.rain && rng() < 0.002) {
+  if (weather.kind === 'rain' && rng() < 0.002) {
     weather.bolt = 0.4;
     if (rng() < 0.3) logEvent('⚡', 'Гром гремит по холмам!');
   }
@@ -2171,7 +2185,7 @@ function drawWorld() {
     ctx.restore();
   }
   // дождь
-  if (weather.rain) {
+  if (weather.kind === 'rain') {
     ctx.fillStyle = 'rgba(40,60,110,0.18)';
     ctx.fillRect(0, 0, cw, ch);
     ctx.strokeStyle = 'rgba(180,200,255,0.45)';
@@ -2185,6 +2199,44 @@ function drawWorld() {
       ctx.lineTo(rx - 3, ry + 11);
     }
     ctx.stroke();
+  }
+  // снегопад
+  if (weather.kind === 'snow' || weather.kind === 'blizzard') {
+    const blz = weather.kind === 'blizzard';
+    if (blz) { ctx.fillStyle = 'rgba(205,220,240,0.22)'; ctx.fillRect(0, 0, cw, ch); }
+    const t = performance.now() / 1000;
+    const n = blz ? 110 : 70;
+    ctx.fillStyle = blz ? 'rgba(235,242,252,0.9)' : 'rgba(245,248,255,0.85)';
+    for (let i = 0; i < n; i++) {
+      const sx = (i * 149 + t * (blz ? 240 : 42) + Math.sin(t * 0.8 + i) * (blz ? 14 : 8)) % cw;
+      const sy = (i * 83 + t * (blz ? 340 : 60)) % ch;
+      ctx.fillRect(sx, sy, 2, 2);
+    }
+  }
+  // туман
+  if (weather.kind === 'fog') {
+    const t = performance.now() / 1000;
+    for (let b = 0; b < 3; b++) {
+      const fy = ch * (0.2 + b * 0.3) + Math.sin(t * 0.3 + b * 2) * 14;
+      const fx = (t * (12 + b * 9)) % (cw + 300) - 300;
+      ctx.fillStyle = `rgba(190,204,196,${(0.16 - b * 0.03).toFixed(2)})`;
+      ctx.beginPath();
+      ctx.ellipse(fx + 150, fy, 260, 46, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(186,198,190,0.10)';
+    ctx.fillRect(0, 0, cw, ch);
+  }
+  // лепестки вишни
+  if (weather.kind === 'petals') {
+    const t = performance.now() / 1000;
+    for (let i = 0; i < 34; i++) {
+      const px2 = (i * 163 + t * 30 + Math.sin(t * 0.9 + i * 1.7) * 20) % cw;
+      const py2 = (i * 97 + t * 46) % ch;
+      ctx.fillStyle = i % 3 ? 'rgba(255,182,208,0.9)' : 'rgba(255,214,228,0.9)';
+      ctx.fillRect(px2, py2, 2, 2);
+      ctx.fillRect(px2 + 1, py2 - 1, 1, 1);
+    }
   }
   // молния
   if (weather.bolt > 0) {
@@ -2607,7 +2659,7 @@ function updateStats() {
   const hh = String(Math.floor(p * 24)).padStart(2, '0');
   const mm = String(Math.floor((p * 24 % 1) * 60)).padStart(2, '0');
   const phaseName = p < 0.1 ? '🌅 рассвет' : p < 0.3 ? '☀️ утро' : p < 0.55 ? '🌤 день' : p < 0.65 ? '🌇 вечер' : '🌙 ночь';
-  const weatherIcon = weather.rain ? '🌧' : '';
+  const weatherIcon = weather.rain ? '🌧' : weather.kind === 'snow' ? '❄' : weather.kind === 'blizzard' ? '🌨' : weather.kind === 'fog' ? '🌫' : weather.kind === 'petals' ? '🌸' : '';
   const danger = monsters.length ? ` <span class="danger">👾 ${monsters.length}!</span>` : '';
   const eraName = ERAS[era()];
   const bedsNow = beds();
@@ -2840,7 +2892,7 @@ function saveGame() {
       } : null,
       stocks: { ...stocks },
       sim: { ...SIM },
-      weather: { rain: weather.rain, t: weather.t },
+      weather: { rain: weather.rain, t: weather.t, kind: weather.kind },
       totalWood,
       settlers: settlersThresholds.slice(),
       regrowQueue: regrowQueue.map(q => ({ x: q.x, y: q.y, at: q.at })),
@@ -2896,7 +2948,7 @@ function restoreWorld(raw) {
     Object.keys(d.sim).forEach(k => SIM[k] = d.sim[k]);
     totalWood = d.totalWood;
     settlersThresholds = d.settlers;
-    weather.rain = d.weather.rain; weather.t = d.weather.t;
+    weather.rain = d.weather.rain; weather.t = d.weather.t; weather.kind = d.weather.kind || (d.weather.rain ? 'rain' : 'clear');
     d.regrowQueue.forEach(q => regrowQueue.push(q));
     simTime = d.simTime;
     lastPhase = phase();
@@ -3038,7 +3090,7 @@ async function llmVillagerThought(v) {
   const traits = v.traits.map(t => t.label).join(', ') || 'обычный';
   const tod = isNight() ? 'глубокая ночь' : phase() < 0.35 ? 'утро' : phase() < 0.6 ? 'день' : 'вечер';
   const st = STATE_RU[v.state] || v.state;
-  const wx = weather.rain ? ', идёт дождь с громом' : '';
+  const wx = weather.kind === 'rain' ? ', идёт дождь с громом' : weather.kind === 'snow' ? ', идёт снегопад' : weather.kind === 'blizzard' ? ', бушует метель' : weather.kind === 'fog' ? ', туман ползёт по земле' : weather.kind === 'petals' ? ', летят лепестки вишни' : '';
   const er = ERAS[era()];
   const climate = CLIMATE_LLM[worldClimate] || 'зелёные луга';
   const prompt = `Житель${v.isChild ? ' (ребёнок)' : ''} ${v.name}. Характер: ${traits}. Сейчас ${tod}${wx}, эпоха «${er}». Он ${st}. Сытость ${Math.round(v.needs.hunger)}/100, энергия ${Math.round(v.needs.energy)}/100, общение ${Math.round(v.needs.social)}/100. Климат: ${climate}. ${v.hp < 12 ? 'Ранен! ' : ''}${mode === 'life' && P && P.kills > 0 ? 'В деревне недавно видели кровь… ' : ''}О чём он думает и чего хочет?`;
