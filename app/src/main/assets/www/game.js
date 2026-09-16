@@ -32,6 +32,9 @@ let mode = 'observer'; // 'observer' | 'life'
 let P = null;        // игрок в режиме «Жизнь»
 let worldId = null, worldName = '';
 let seed = (Date.now() % 2147483647) | 0;
+function urlSeed() {
+  try { const p = new URLSearchParams(location.search).get('seed'); return p ? (Math.abs(parseInt(p, 10)) || null) : null; } catch (e) { return null; }
+}
 let rng = null;
 let camX = 0, camY = 0, zoom = 1.6;
 let selected = null;
@@ -79,10 +82,13 @@ function makeNoise(s) {
 // ── Типы тайлов ───────────────────────────────────────────────────
 const TILE_COLORS = {
   0: [27, 54, 93], 1: [52, 110, 166], 2: [216, 196, 122],
-  3: [94, 140, 66], 4: [110, 156, 74], 5: [120, 120, 128], 6: [225, 228, 235]
+  3: [94, 140, 66], 4: [110, 156, 74], 5: [120, 120, 128], 6: [225, 228, 235],
+  7: [224, 188, 124], 8: [172, 160, 88]
 };
-const isWalkTile = t => t >= 2 && t <= 4;
-const BLOCKING = new Set(['tree', 'pine', 'bush', 'stone', 'hut', 'campfire', 'farm', 'shelter', 'house', 'mine']);
+const isWalkTile = t => (t >= 2 && t <= 4) || t === 7 || t === 8;
+const BLOCKING = new Set(['tree', 'pine', 'bush', 'stone', 'hut', 'campfire', 'farm', 'shelter', 'house', 'mine', 'cactus', 'acacia']);
+const seedArid = s => mulberry32((s | 0) + 12345)();
+let worldArid = 0;
 
 function blockingAt(x, y) {
   const o = objAt.get(key(x, y));
@@ -102,6 +108,7 @@ function randWalkable(minDistFromCamp, maxTry) {
 // ── Генерация мира ────────────────────────────────────────────────
 function genWorld(s) {
   rng = mulberry32(s);
+  const arid = seedArid(s); worldArid = arid;
   const nE = makeNoise(s), nM = makeNoise(s + 7777);
   world = new Uint8Array(W * H);
   const moistArr = new Float32Array(W * H);
@@ -116,9 +123,15 @@ function genWorld(s) {
       if (e < 0.30) t = 0;
       else if (e < 0.38) t = 1;
       else if (e < 0.44) t = 2;
-      else if (e > 0.82) t = 6;
+      else if (e > 0.82) t = arid > 0.6 ? 5 : 6;
       else if (e > 0.74) t = 5;
-      else t = m > 0.55 ? 4 : 3;
+      else {
+        const dry = arid * 0.8 + (0.55 - m) * 0.42;
+        if (dry > 0.6) t = 7;          // пустыня
+        else if (dry > 0.48) t = 8;       // саванна
+        else if (arid > 0.5 && m > 0.86) t = 4; // оазис
+        else t = m > 0.55 ? 4 : 3;
+      }
       world[key(x, y)] = t;
     }
   }
@@ -133,6 +146,10 @@ function genWorld(s) {
       else if (t === 4 && r < 0.07) addObject('tree', x, y);
       else if (t === 3 && r < 0.19) addObject('flower', x, y);
       else if ((t === 5 || t === 2) && r < 0.02) addObject('stone', x, y);
+      else if (t === 7 && r < 0.05) addObject('cactus', x, y);
+      else if (t === 7 && r < 0.058) addObject('stone', x, y);
+      else if (t === 8 && r < 0.05) addObject('acacia', x, y);
+      else if (t === 8 && r < 0.08) addObject('bush', x, y);
     }
   }
   // место для деревни
@@ -154,7 +171,7 @@ function genWorld(s) {
   for (let y = best.y - 3; y <= best.y + 3; y++)
     for (let x = best.x - 3; x <= best.x + 3; x++) {
       const o = objAt.get(key(x, y));
-      if (o && ['tree', 'bush', 'stone', 'pine'].includes(o.type)) removeObject(o);
+      if (o && ['tree', 'bush', 'stone', 'pine', 'cactus', 'acacia'].includes(o.type)) removeObject(o);
     }
   addObject('campfire', campfire.x, campfire.y);
   huts = [];
@@ -175,9 +192,14 @@ function genWorld(s) {
     const p = randWalkable(8);
     animals.push({ id: nextId++, kind: 'rabbit', x: p.x, y: p.y, hp: 5, state: 'idle', t: rng() * 2, dirX: 0, dirY: 0, facing: 1, animT: 0 });
   }
-  for (let i = 0; i < 5; i++) {
+  const nWolves = arid > 0.55 ? 2 : 5;
+  for (let i = 0; i < nWolves; i++) {
     const p = randWalkable(14);
     animals.push({ id: nextId++, kind: 'wolf', x: p.x, y: p.y, hp: 12, state: 'idle', t: rng() * 3, dirX: 0, dirY: 0, facing: 1, animT: 0, preyId: 0 });
+  }
+  if (arid > 0.55) for (let i = 0; i < 4; i++) {
+    const p = randWalkable(8);
+    animals.push({ id: nextId++, kind: 'camel', x: p.x, y: p.y, hp: 16, state: 'idle', t: rng() * 3, dirX: 0, dirY: 0, facing: 1, animT: 0, preyId: 0 });
   }
   monsters = [];
   stocks = { wood: 0, berries: 6, stone: 0 };
@@ -186,13 +208,14 @@ function genWorld(s) {
   weather = { rain: false, t: 60 + rng() * 120, bolt: 0 };
   SIM.monsterWaves = 0; SIM.monsterKills = 0; SIM.melted = 0; SIM.deaths = 0; SIM.births = 0; SIM.harvests = 0; SIM.rains = 0;
   renderMapCanvas();
-  logEvent('🔥', 'Двое древних людей разожгли костёр. Начало великого пути!');
+  const climate = arid > 0.72 ? ' среди бескрайних песков' : arid > 0.55 ? ' на краю пустыни' : arid > 0.45 ? ' в сухих саваннах' : '. Начало великого пути';
+  logEvent('🔥', 'Двое древних людей разожгли костёр' + climate + '!');
 }
 
 function addObject(type, x, y) {
   const o = { id: nextId++, type, x, y };
-  if (type === 'tree' || type === 'pine') { o.variant = Math.floor(rng() * 3); o.regrow = 0; }
-  if (type === 'bush') { o.depleted = false; o.regrowAt = 0; }
+  if (type === 'tree' || type === 'pine' || type === 'acacia') { o.variant = Math.floor(rng() * 3); o.regrow = 0; }
+  if (type === 'bush' || type === 'cactus') { o.depleted = false; o.regrowAt = 0; }
   if (type === 'farm') { o.stage = 1; o.growAt = 0; farms.push(o); }
   objects.push(o); objAt.set(key(x, y), o);
   return o;
@@ -312,6 +335,37 @@ function makeTextures() {
   }
   // кусты
   spr.bush = [makeBush(false, r), makeBush(true, r)];
+  // кактус (с плодами / обобранный)
+  spr.cactus = (() => {
+    const mk = withFruit => {
+      const c = document.createElement('canvas'); c.width = 10; c.height = 14;
+      const g = c.getContext('2d');
+      for (let y = 4; y < 14; y++) { px(g, 4, y, 62, 132, 66); px(g, 5, y, 48, 108, 52); }
+      px(g, 4, 13, 40, 84, 42); px(g, 5, 13, 40, 84, 42);
+      // руки
+      for (let y = 6; y < 9; y++) px(g, 2, y, 56, 120, 60);
+      px(g, 1, 5, 56, 120, 60); px(g, 2, 5, 62, 132, 66); px(g, 1, 6, 62, 132, 66);
+      for (let y = 8; y < 11; y++) px(g, 7, y, 56, 120, 60);
+      px(g, 8, 7, 56, 120, 60); px(g, 8, 8, 62, 132, 66); px(g, 7, 7, 62, 132, 66);
+      px(g, 4, 4, 74, 150, 74); px(g, 5, 4, 74, 150, 74);
+      if (withFruit) { px(g, 4, 3, 224, 92, 60); px(g, 5, 3, 224, 92, 60); px(g, 1, 5, 224, 92, 60); px(g, 8, 7, 224, 92, 60); }
+      return c;
+    };
+    return [mk(true), mk(false)];
+  })();
+  // акация — плоское сухое дерево
+  spr.acacia = (() => {
+    const c = document.createElement('canvas'); c.width = 14; c.height = 14;
+    const g = c.getContext('2d');
+    for (let y = 9; y < 14; y++) { px(g, 6, y, 118, 88, 52); px(g, 7, y, 96, 70, 40); }
+    px(g, 6, 13, 80, 58, 34);
+    for (let x = 1; x < 13; x++) for (let y = 4; y < 9; y++) {
+      const edge = Math.abs(x - 6.5) / 5.5 + Math.abs(y - 6) / 3.2;
+      if (edge < 1) px(g, x, y, r() < 0.35 ? [124, 130, 60] : [148, 152, 72]);
+    }
+    px(g, 5, 3, 148, 152, 72); px(g, 6, 3, 148, 152, 72); px(g, 7, 3, 148, 152, 72);
+    return c;
+  })();
   function makeBush(depleted, r) {
     const c = document.createElement('canvas'); c.width = 10; c.height = 8;
     const g = c.getContext('2d');
@@ -452,6 +506,19 @@ function makeTextures() {
     spr.houseChimney = { x: 16, y: 0 };
     return c;
   })();
+  // глинобитные варианты для пустыни
+  const adobeTint = (base, tr, tg, tb, a) => {
+    const c = document.createElement('canvas'); c.width = base.width; c.height = base.height;
+    const g = c.getContext('2d');
+    g.drawImage(base, 0, 0);
+    g.globalCompositeOperation = 'source-atop';
+    g.fillStyle = 'rgba(' + tr + ',' + tg + ',' + tb + ',' + a + ')';
+    g.fillRect(0, 0, c.width, c.height);
+    return c;
+  };
+  spr.hutD = adobeTint(spr.hut, 205, 165, 110, 0.5);
+  spr.shelterD = adobeTint(spr.shelter, 210, 175, 120, 0.55);
+  spr.houseD = adobeTint(spr.house, 205, 160, 105, 0.45);
   // костёр
   spr.campfire = (() => {
     const c = document.createElement('canvas'); c.width = 10; c.height = 10;
@@ -711,6 +778,12 @@ const THOUGHTS = {
 };
 
 // мысли по характерам — у каждого типа свой голос
+const DESERT_THOUGHTS = [
+  'Песок звенит под ногами, как стекло.', 'Солнце жжёт макушку. Терпи.', 'Хоть бы капля дождя… хоть одна.',
+  'Кактус опять уколол палец. Но какой вкусный!', 'За дюной — мираж или вода? Проверю.', 'Ночью холодно, как в горах.',
+  'Верблюд смотрит на меня с упрёком.', 'Ветер несёт песок прямо в глаза.', 'Наши дома из глины — самые крепкие.',
+  'Оазис — это чудо, не иначе.', 'Тень от пальмы — как подарок.', 'Пустыня проверяет на прочность.'
+];
 const TRAIT_THOUGHTS = {
   hardworking: {
     chop: ['Даже отдыхая, я думаю о дровах.', 'Работа не волк… волк — в лесу, а работа — тут.'],
@@ -886,7 +959,7 @@ function findNearestObj(v, types, extra) {
   for (const o of objects) {
     if (!types.includes(o.type)) continue;
     if (o.regrow > simTime) continue;
-    if (o.type === 'bush' && o.depleted) continue;
+    if ((o.type === 'bush' || o.type === 'cactus') && o.depleted) continue;
     if (extra && !extra(o)) continue;
     const d = dist2(v.x, v.y, o.x, o.y);
     if (d < bd) { bd = d; best = o; }
@@ -941,9 +1014,9 @@ function decide(v) {
   if (readyFarm && !night) { startHarvest(v, readyFarm); return; }
   // еда кончается — фуражируем / охотимся
   if (stocks.berries < 8 && !night) {
-    const b = findNearestObj(v, ['bush']);
+    const b = findNearestObj(v, ['bush', 'cactus']);
     if (b) { startForage(v, b); return; }
-    const rb = nearestAnimal(v, 'rabbit', 9);
+    const rb = nearestAnimal(v, 'rabbit', 9) || (worldArid > 0.55 ? nearestAnimal(v, 'camel', 12) : null);
     if (rb) { startHunt(v, rb); return; }
   }
   // орудия труда: каменный топор = палка + камень.
@@ -968,7 +1041,7 @@ function decide(v) {
     const st = findNearestObj(v, ['stone']);
     if (st) { startMine(v, st); return; }
   }
-  const t = stocks.wood < 400 ? findNearestObj(v, ['tree', 'pine']) : null;
+  const t = stocks.wood < 400 ? findNearestObj(v, ['tree', 'pine', 'acacia']) : null;
   if (t && !night) { startChop(v, t); return; }
   if (!t && !night && stocks.wood >= 400 && rng() < 0.2) think(v, 'Дров на складе выше крыши — можно и отдохнуть.');
   if (night && hasTrait(v, 'dreamer') && rng() < 0.5) { think(v, pickThought(v, 'nightDream')); startWander(v); return; }
@@ -978,7 +1051,7 @@ function decideChild(v, night, n) {
   if (n.hunger < 35) { startEat(v); return; }
   if (n.energy < 30 || night) { startSleep(v); return; }
   if (v.carry.berries > 0) { startDeposit(v); return; }
-  const b = findNearestObj(v, ['bush']);
+  const b = findNearestObj(v, ['bush', 'cactus']);
   if (b && !night) { startForage(v, b); return; }
   if (rng() < 0.3) think(v, pickThought(v, 'child'));
   startWander(v);
@@ -986,6 +1059,7 @@ function decideChild(v, night, n) {
 function pick(arr) { return arr[Math.floor(rng() * arr.length)]; }
 function pickThought(v, key) {
   const base = THOUGHTS[key];
+  if (worldArid > 0.55 && rng() < 0.3) return pick(DESERT_THOUGHTS);
   if (v && v.traits && rng() < 0.4) {
     for (const t of v.traits) {
       const pool = (TRAIT_THOUGHTS[t.k] || {})[key];
@@ -1038,10 +1112,11 @@ function startEat(v) {
     v.state = 'goto_eat';
     think(v, 'Проголодался… пойду к костру.');
   } else {
-    const b = findNearestObj(v, ['bush']);
+    const b = findNearestObj(v, ['bush', 'cactus']);
     if (b) { startForage(v, b); v.eatIntent = true; }
     else {
-      const rb = nearestAnimal(v, 'rabbit', 10);
+      let rb = nearestAnimal(v, 'rabbit', 10);
+      if (!rb && worldArid > 0.55 && !v.isChild) rb = nearestAnimal(v, 'camel', 12);
       if (rb && !v.isChild) { startHunt(v, rb); v.eatIntent = true; }
       else { v.state = 'idle'; v.decideT = 3; think(v, 'В деревне пусто… надо искать еду.'); }
     }
@@ -1153,7 +1228,7 @@ function updateSim(dt) {
 
   // регенерация
   for (const o of objects) {
-    if (o.type === 'bush' && o.depleted && o.regrowAt && simTime >= o.regrowAt) {
+    if ((o.type === 'bush' || o.type === 'cactus') && o.depleted && o.regrowAt && simTime >= o.regrowAt) {
       o.depleted = false; o.regrowAt = 0;
     }
   }
@@ -1333,6 +1408,14 @@ function updateAnimal(a, dt) {
       a.dirY = a.y + (rng() * 6 - 3);
     }
     steer(a, a.dirX, a.dirY, 2.2, dt);
+  } else if (a.kind === 'camel') {
+    a.state = 'idle';
+    if (a.t <= 0) {
+      a.t = 2 + rng() * 4;
+      a.dirX = a.x + (rng() * 10 - 5);
+      a.dirY = a.y + (rng() * 10 - 5);
+    }
+    steer(a, a.dirX, a.dirY, 1.1, dt);
   } else if (a.kind === 'wolf') {
     if (mode === 'life' && P && !P.dead && a.hostileP > 0) {
       a.hostileP -= dt;
@@ -2043,17 +2126,21 @@ function drawWorld() {
 
 function drawObject(o) {
   const x = o.x * TILE, y = o.y * TILE;
+  const tt = inb(o.x, o.y) ? world[key(o.x, o.y)] : 3;
+  const adobe = tt === 7 || tt === 8;
   switch (o.type) {
     case 'tree': ctx.drawImage(spr.tree[o.variant % 3], x - 1, y - 6); break;
     case 'pine': ctx.drawImage(spr.pine[o.variant % 3], x - 1, y - 6); break;
     case 'bush': ctx.drawImage(spr.bush[o.depleted ? 1 : 0], x - 1, y + 2); break;
+    case 'cactus': ctx.drawImage(spr.cactus[o.depleted ? 1 : 0], x - 1, y - 6); break;
+    case 'acacia': ctx.drawImage(spr.acacia, x - 3, y - 6); break;
     case 'stone': ctx.drawImage(spr.stone, x, y + 1); break;
     case 'flower': ctx.drawImage(spr.flower, x + 1, y + 1); break;
     case 'stump': ctx.drawImage(spr.stump, x + 1, y + 4); break;
     case 'grave': ctx.drawImage(spr.grave, x + 1, y + 2); break;
     case 'farm': ctx.drawImage(spr.farm[o.stage] || spr.farm[1], x - 4, y - 1); break;
     case 'hut': {
-      ctx.drawImage(spr.hut, x - 5, y - 8);
+      ctx.drawImage(adobe ? spr.hutD : spr.hut, x - 5, y - 8);
       if (nightAmount() > 0.3) {
         ctx.fillStyle = 'rgba(255,220,120,0.9)';
         ctx.fillRect(x - 5 + spr.hutWindow.x, y - 8 + spr.hutWindow.y, spr.hutWindow.w, spr.hutWindow.h);
@@ -2062,11 +2149,11 @@ function drawObject(o) {
       break;
     }
     case 'shelter': {
-      ctx.drawImage(spr.shelter, x - 3, y - 6);
+      ctx.drawImage(adobe ? spr.shelterD : spr.shelter, x - 3, y - 6);
       break;
     }
     case 'house': {
-      ctx.drawImage(spr.house, x - 7, y - 10);
+      ctx.drawImage(adobe ? spr.houseD : spr.house, x - 7, y - 10);
       if (nightAmount() > 0.3) {
         ctx.fillStyle = 'rgba(255,220,120,0.9)';
         for (const wnd of spr.houseWindows)
@@ -2112,6 +2199,15 @@ function drawAnimal(a) {
   if (a.kind === 'rabbit') {
     const set = a.facing >= 0 ? spr.rabbit : spr.rabbit;
     ctx.drawImage(set[frame], Math.round(x), Math.round(y));
+  } else if (a.kind === 'camel') {
+    const bob = frame ? 0 : 1;
+    ctx.fillStyle = 'rgb(196,160,110)'; ctx.fillRect(x + 1, y + 4 + bob, 8, 4);
+    ctx.fillStyle = 'rgb(168,132,88)'; ctx.fillRect(x + 1, y + 7, 8, 1);
+    ctx.fillStyle = 'rgb(206,170,120)'; ctx.fillRect(x + 2, y + 2 + bob, 4, 4);
+    ctx.fillStyle = 'rgb(196,160,110)'; ctx.fillRect(x + 3, y + 1 + bob, 3, 2);
+    ctx.fillStyle = 'rgb(150,112,74)'; ctx.fillRect(x + 3, y + 1, 1, 1);
+    ctx.fillStyle = 'rgb(206,170,120)'; ctx.fillRect(x, y + 6 + bob, 1, 3); ctx.fillRect(x + 8, y + 6 + bob, 1, 3);
+    ctx.fillStyle = 'rgb(120,86,56)'; ctx.fillRect(x, y + 8 + bob, 1, 1); ctx.fillRect(x + 8, y + 8 + bob, 1, 1);
   } else {
     const set = a.facing >= 0 ? spr.wolf : spr.wolf;
     ctx.drawImage(set[frame], Math.round(x), Math.round(y));
@@ -2251,14 +2347,19 @@ function fmtLeft(sec) {
   return Math.ceil(sec / 60) + ' мин';
 }
 function objInfo(o) {
-  const titles = { tree: ['🌳', 'Лиственное дерево'], pine: ['🌲', 'Сосна'], bush: ['🫐', 'Ягодный куст'], stone: ['🪨', 'Валун'], flower: ['🌸', 'Цветок'], stump: ['🪵', 'Пень'], grave: ['🪦', 'Могила жителя'], farm: ['🌾', 'Поле пшеницы'], shelter: ['🏕', 'Шалаш'], hut: ['🏠', 'Хижина'], house: ['🏡', 'Каменный дом'], campfire: ['🔥', 'Костёр — сердце деревни'], mine: ['⛏️', 'Шахта'] };
+  const titles = { tree: ['🌳', 'Лиственное дерево'], pine: ['🌲', 'Сосна'], bush: ['🫐', 'Ягодный куст'], cactus: ['🌵', 'Кактус'], acacia: ['🌳', 'Акация'], stone: ['🪨', 'Валун'], flower: ['🌸', 'Цветок'], stump: ['🪵', 'Пень'], grave: ['🪦', 'Могила жителя'], farm: ['🌾', 'Поле пшеницы'], shelter: ['🏕', 'Шалаш'], hut: ['🏠', 'Хижина'], house: ['🏡', 'Каменный дом'], campfire: ['🔥', 'Костёр — сердце деревни'], mine: ['⛏️', 'Шахта'] };
   const t = titles[o.type] || ['❓', 'Объект'];
   const lines = [];
-  if (o.type === 'tree' || o.type === 'pine') lines.push('Древесина: <b>3 🪵</b>', 'Срубит любой житель с топором');
+  if (o.type === 'tree' || o.type === 'pine' || o.type === 'acacia') lines.push('Древесина: <b>3 🪵</b>', 'Срубит любой житель с топором');
   if (o.type === 'bush') {
     if (o.depleted) lines.push('Пусто. Ягоды вернутся через <b>' + fmtLeft(o.regrowAt - simTime) + '</b>');
     else lines.push('Спелые ягоды: <b>2 🫐</b>');
   }
+  if (o.type === 'cactus') {
+    if (o.depleted) lines.push('Плоды сорваны. Вернутся через <b>' + fmtLeft(o.regrowAt - simTime) + '</b>');
+    else lines.push('Сладкие плоды кактуса: <b>2 🫐</b>', 'Осторожно — колючий!');
+  }
+  if (o.type === 'acacia') lines.push('Сухое дерево саванны', 'Древесина: <b>3 🪵</b>');
   if (o.type === 'stone') lines.push('Камень: <b>2 🪨</b>', 'Нужен для орудий и домов');
   if (o.type === 'farm') {
     const stageNames = ['—', 'ростки', 'колосится', 'созрело'];
@@ -2298,6 +2399,7 @@ function updatePanel() {
       if (!ent) { selectedEnt = null; panelEl.style.display = 'none'; return; }
       if (ent.kind === 'rabbit') { icon = '🐇'; title = 'Кролик'; lines = ['Здоровье: <b>' + Math.ceil(ent.hp) + '</b>', 'Пугливый обитатель лугов', 'На него охотятся волки… и жители']; }
       if (ent.kind === 'wolf') { icon = '🐺'; title = 'Волк'; lines = ['Здоровье: <b>' + Math.ceil(ent.hp) + '</b>', 'Охотится на кроликов', 'К деревне не подходит близко']; }
+      if (ent.kind === 'camel') { icon = '🐪'; title = 'Верблюд'; lines = ['Здоровье: <b>' + Math.ceil(ent.hp) + '</b>', 'Спокойный хозяин песков', 'Даст <b>4 🍖</b> при охоте']; }
       if (ent.kind === 'slime') { icon = '👾'; title = 'Слайма'; lines = ['Здоровье: <b>' + Math.ceil(ent.hp) + '</b>/' + ent.maxHp, 'Урон: <b>' + ent.dmg + '</b>', 'На рассвете тает на солнце ☀️']; }
     }
     panelEl.innerHTML = `
@@ -2595,7 +2697,11 @@ function saveGame() {
   try {
     if (worldId == null) {
       worldId = Date.now().toString(36) + Math.floor(rng() * 999);
-      worldName = WN_ADJ[Math.floor(rng() * WN_ADJ.length)] + ' ' + WN_NOUN[Math.floor(rng() * WN_NOUN.length)];
+      if (seedArid(seed) > 0.55) {
+        const D_ADJ = ['Жёлтые', 'Выжженные', 'Красные', 'Затерянные', 'Горячие', 'Сухие', 'Стеклянные', 'Медные'];
+        const D_NOUN = ['Пески', 'Барханы', 'Дюны', 'Оазисы', 'Солончаки', 'Степи'];
+        worldName = D_ADJ[Math.floor(rng() * D_ADJ.length)] + ' ' + D_NOUN[Math.floor(rng() * D_NOUN.length)];
+      } else worldName = WN_ADJ[Math.floor(rng() * WN_ADJ.length)] + ' ' + WN_NOUN[Math.floor(rng() * WN_NOUN.length)];
     }
     const data = {
       v: 2, mode, seed, simTime, worldName,
@@ -2728,7 +2834,7 @@ function showMainMenu() {
 }
 function startNewGame() {
   mode = 'observer'; P = null; hideLifeHud();
-  seed = Math.floor(Math.random() * 1000000000);
+  seed = urlSeed() || Math.floor(Math.random() * 1000000000);
   worldId = null; worldName = '';
   genWorld(seed);
   chronicleEl.innerHTML = '';
@@ -2810,7 +2916,8 @@ async function llmVillagerThought(v) {
   const st = STATE_RU[v.state] || v.state;
   const wx = weather.rain ? ', идёт дождь с громом' : '';
   const er = ERAS[era()];
-  const prompt = `Житель${v.isChild ? ' (ребёнок)' : ''} ${v.name}. Характер: ${traits}. Сейчас ${tod}${wx}, эпоха «${er}». Он ${st}. Сытость ${Math.round(v.needs.hunger)}/100, энергия ${Math.round(v.needs.energy)}/100, общение ${Math.round(v.needs.social)}/100. ${v.hp < 12 ? 'Ранен! ' : ''}${mode === 'life' && P && P.kills > 0 ? 'В деревне недавно видели кровь… ' : ''}О чём он думает и чего хочет?`;
+  const climate = worldArid > 0.72 ? 'мир — бескрайняя пустыня с оазисами' : worldArid > 0.55 ? 'деревня на краю пустыни' : worldArid > 0.45 ? 'сухая саванна' : 'зелёные луга';
+  const prompt = `Житель${v.isChild ? ' (ребёнок)' : ''} ${v.name}. Характер: ${traits}. Сейчас ${tod}${wx}, эпоха «${er}». Он ${st}. Сытость ${Math.round(v.needs.hunger)}/100, энергия ${Math.round(v.needs.energy)}/100, общение ${Math.round(v.needs.social)}/100. Климат: ${climate}. ${v.hp < 12 ? 'Ранен! ' : ''}${mode === 'life' && P && P.kills > 0 ? 'В деревне недавно видели кровь… ' : ''}О чём он думает и чего хочет?`;
   const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + LLM.key, 'Content-Type': 'application/json' },
@@ -2876,8 +2983,8 @@ function tryLlmDesire(v) {
   if (v.needs.hunger < 32 || v.needs.energy < 22) return false; // база важнее
   const want = v.llmWant;
   let done = true;
-  if (want === 'berries') { const o = findNearestObj(v, ['bush'], o2 => !o2.depleted); if (o) startForage(v, o); else done = false; }
-  else if (want === 'wood') { const o = findNearestObj(v, ['tree', 'pine']); if (o) startChop(v, o); else done = false; }
+  if (want === 'berries') { const o = findNearestObj(v, ['bush', 'cactus'], o2 => !o2.depleted); if (o) startForage(v, o); else done = false; }
+  else if (want === 'wood') { const o = findNearestObj(v, ['tree', 'pine', 'acacia']); if (o) startChop(v, o); else done = false; }
   else if (want === 'stone') { const o = findNearestObj(v, ['stone']); if (o) startMine(v, o); else done = false; }
   else if (want === 'chat') {
     const p = villagers.find(w => w !== v && !w.isChild && dist(w.x, w.y, v.x, v.y) < 22);
@@ -2921,7 +3028,7 @@ function lifeBubble(text) { P.bubble = { text, until: simTime + 4 }; }
 
 function startLifeGame(gender) {
   mode = 'life';
-  seed = Math.floor(Math.random() * 1000000000);
+  seed = urlSeed() || Math.floor(Math.random() * 1000000000);
   worldId = null; worldName = '';
   genWorld(seed);
   chronicleEl.innerHTML = '';
@@ -3238,8 +3345,8 @@ function lifeTap(wx, wy) {
   }
   if (o) {
     let k = null;
-    if (o.type === 'tree' || o.type === 'pine') k = 'chop';
-    else if (o.type === 'bush' && !o.depleted) k = 'forage';
+    if (o.type === 'tree' || o.type === 'pine' || o.type === 'acacia') k = 'chop';
+    else if ((o.type === 'bush' || o.type === 'cactus') && !o.depleted) k = 'forage';
     else if (o.type === 'stone') k = 'stone';
     else if (o.type === 'mine') k = 'ore';
     else if (o.type === 'farm' && o.stage >= 3) k = 'harvest';
@@ -3341,7 +3448,7 @@ function startLifeAction(t) {
         if (t.kind === 'attackA') {
           const i = animals.indexOf(e);
           if (i >= 0) animals.splice(i, 1);
-          const meat = e.kind === 'wolf' ? 3 : 2;
+          const meat = e.kind === 'wolf' ? 3 : e.kind === 'camel' ? 4 : 2;
           P.inv.meat += meat;
           logEvent(e.kind === 'wolf' ? '🐺' : '🐇', `Ты добыл${P.gender === 'f' ? 'а' : ''} ${e.kind === 'wolf' ? 'волка' : 'кролика'} (+${meat} 🍖)`);
         } else {
@@ -3390,7 +3497,7 @@ function finishLifeAction(k) {
   const o = objAt.get(key(k.ox, k.oy));
   switch (k.kind) {
     case 'chop': {
-      if (o && (o.type === 'tree' || o.type === 'pine')) {
+      if (o && (o.type === 'tree' || o.type === 'pine' || o.type === 'acacia')) {
         removeObject(o);
         addObject('stump', o.x, o.y);
         regrowQueue.push({ x: o.x, y: o.y, at: simTime + 2 * DAY_LEN / rainMult() });
@@ -3401,7 +3508,7 @@ function finishLifeAction(k) {
       break;
     }
     case 'forage': {
-      if (o && o.type === 'bush' && !o.depleted) {
+      if (o && (o.type === 'bush' || o.type === 'cactus') && !o.depleted) {
         o.depleted = true;
         o.regrowAt = simTime + 25 / rainMult();
         P.inv.berries += 2;
