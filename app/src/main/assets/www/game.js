@@ -21,7 +21,7 @@ let monsters = [];  // слаймы (враги, приходят ночью)
 let campfire = { x: 0, y: 0 };
 let huts = [];
 let farms = [];     // объекты типа 'farm' тоже лежат в objects
-let stocks = { wood: 0, berries: 6, stone: 0 };
+let stocks = { wood: 0, berries: 6, stone: 0, fur: 0 };
 let totalWood = 0;
 let pendingBuild = null;   // { kind:'hut'|'farm', x, y, assigned }
 let settlersThresholds = [30, 70, 130, 220, 340];
@@ -228,7 +228,7 @@ function genWorld(s) {
     animals.push({ id: nextId++, kind: 'deer', x: p.x, y: p.y, hp: 14, state: 'idle', t: rng() * 3, dirX: 0, dirY: 0, facing: 1, animT: 0, preyId: 0 });
   }
   monsters = [];
-  stocks = { wood: 0, berries: 6, stone: 0 };
+  stocks = { wood: 0, berries: 6, stone: 0, fur: 0 };
   totalWood = 0; pendingBuild = null; settlersSpawned = 0;
   simTime = 0; selected = null; selectedObj = null; selectedEnt = null; lastPhase = 0;
   weather = { rain: false, kind: 'clear', t: 60 + rng() * 120, bolt: 0 };
@@ -856,7 +856,7 @@ const DESERT_THOUGHTS = [
 const SWAMP_THOUGHTS = ['Хлюп… хлюп… ноги по колено в топи.', 'Комары сегодня злее волков.', 'Мангры держат землю — не утонем.', 'Туман над болотом, хоть факел бери.', 'В трясине что-то булькает. Не хочу знать что.', 'Камшиш хрустит под ногами.', 'Тут каждая тропа — на удачу.'];
 const DARK_THOUGHTS = ['Лес такой густой — солнце не видно.', 'Тихо… слишком тихо.', 'Здесь грибы растут выше колена.', 'Ели давят со всех сторон.', 'В темноте между стволами кто-то смотрит.', 'Хорошо, что мы вместе.', 'Мрак кругом, а костёр — наш маяк.'];
 const CHERRY_THOUGHTS = ['Лепестки летят, как снег вишнёвый.', 'Какая красота вокруг!', 'Пахнет мёдом и цветами.', 'Розовый вечер… сердце поёт.', 'Из этих деревьев выйдут самые красивые дома.', 'Пчёлы тут счастливее нас.'];
-const SNOW_THOUGHTS = ['Буран — к костру, это закон тундры.', 'Хрустит под ногами — только мой след.', 'Видишь пар от дыхания? Мы живы.', 'Ноги мёрзнут, но очаг ждёт.', 'За белой мглой — целая тундра.', 'Олени уводят нас за собой.', 'Снег засыпает все тропы. Идем по звёздам.', 'Мороз щиплет щёки — бодрит!'];
+const SNOW_THOUGHTS = ['Шуба греет лучше любого костра.', 'Мех — валюта тундры.', 'Буран — к костру, это закон тундры.', 'Хрустит под ногами — только мой след.', 'Видишь пар от дыхания? Мы живы.', 'Ноги мёрзнут, но очаг ждёт.', 'За белой мглой — целая тундра.', 'Олени уводят нас за собой.', 'Снег засыпает все тропы. Идем по звёздам.', 'Мороз щиплет щёки — бодрит!'];
 const BIOME_THOUGHTS = { 1: DESERT_THOUGHTS, 2: SWAMP_THOUGHTS, 3: DARK_THOUGHTS, 4: CHERRY_THOUGHTS, 5: SNOW_THOUGHTS };
 const TRAIT_THOUGHTS = {
   hardworking: {
@@ -927,7 +927,8 @@ function makeVillager(x, y) {
     id: nextId++, name, bodyIdx, traits,
     x, y, path: null, pathIdx: 0, facing: 1,
     state: 'idle', stateT: 0, workT: 0, targetObj: null, targetVil: null,
-    carry: { wood: 0, berries: 0, stone: 0 },
+    carry: { wood: 0, berries: 0, stone: 0, fur: 0 },
+    coat: false,
     needs: { hunger: 70 + rng() * 30, energy: 70 + rng() * 30, social: 50 + rng() * 40 },
     skill: { chop: 1, forage: 1, combat: 1 },
     hp: 20, tool: null, spear: false,
@@ -1094,6 +1095,14 @@ function decide(v) {
     if (b) { startForage(v, b); return; }
     const rb = nearestAnimal(v, 'rabbit', 9) || (worldClimate === 1 ? nearestAnimal(v, 'camel', 12) : null) || (worldClimate === 5 ? nearestAnimal(v, 'deer', 12) : null);
     if (rb) { startHunt(v, rb); return; }
+  }
+  // северная деревня: каждому — шуба
+  if (worldClimate === 5 && !night && !v.isChild) {
+    if (!v.coat && (stocks.fur || 0) >= 3 && stocks.wood >= 2) { startCraft(v, 'coat'); return; }
+    if ((stocks.fur || 0) < 3 && villagers.some(o => !o.coat && !o.isChild)) {
+      const bg = nearestAnimal(v, 'deer', 16) || nearestAnimal(v, 'wolf', 12);
+      if (bg) { startHunt(v, bg); return; }
+    }
   }
   // орудия труда: каменный топор = палка + камень.
   // Порядок: дрова → камень → крафт. Карьер — только когда дерево уже есть.
@@ -1389,6 +1398,20 @@ function onMorning() {
     const p = randWalkable(8);
     animals.push({ id: nextId++, kind: 'rabbit', x: p.x, y: p.y, hp: 5, state: 'idle', t: 1, dirX: 0, dirY: 0, facing: 1, animT: 0 });
   }
+  const wildKind = worldClimate === 1 ? 'camel' : worldClimate === 5 ? 'deer' : null;
+  if (wildKind) {
+    const wildTarget = worldClimate === 1 ? 4 : 6;
+    const wilds = animals.filter(a => a.kind === wildKind && a.hp > 0).length;
+    if (wilds < wildTarget) {
+      const p = randWalkable(20);
+      animals.push({ id: nextId++, kind: wildKind, x: p.x, y: p.y, hp: worldClimate === 1 ? 16 : 14, state: 'idle', t: rng() * 3, dirX: 0, dirY: 0, facing: 1, animT: 0, preyId: 0 });
+    }
+  }
+  const wolves = animals.filter(a => a.kind === 'wolf' && a.hp > 0).length;
+  if (wolves < 2) {
+    const p = randWalkable(14);
+    animals.push({ id: nextId++, kind: 'wolf', x: p.x, y: p.y, hp: 12, state: 'idle', t: rng() * 3, dirX: 0, dirY: 0, facing: 1, animT: 0, preyId: 0 });
+  }
   // рождение: еда есть, дома есть, любовь есть
   const adults = villagers.filter(v => !v.isChild);
   if (adults.length >= 2 && stocks.berries >= 12 && beds() >= 4 && era() >= 2 && rng() < 0.65 && villagers.length < 16) {
@@ -1670,7 +1693,7 @@ function killVillager(v, by) {
 function updateVillager(v, dt) {
   // мороз в буран: кто не у огня и не в доме — замерзает
   if (worldClimate === 5 && weather.kind === 'blizzard' && !v.isChild) {
-    if (!isWarm(v)) {
+    if (!isWarm(v) && !v.coat) {
       v.hp -= 0.05 * dt;
       if (v.hp <= 0) { killVillager(v, 'cold'); return; }
     }
@@ -1806,6 +1829,7 @@ function updateVillager(v, dt) {
     case 'goto_craft': {
       // сдаём ношу в общий котёл — из неё и мастерим
       stocks.wood += v.carry.wood; stocks.stone += v.carry.stone; stocks.berries += v.carry.berries;
+      stocks.fur = (stocks.fur || 0) + (v.carry.fur || 0); v.carry.fur = 0;
       v.carry = { wood: 0, berries: 0, stone: 0 };
       v.state = 'craft'; v.workT = 2.5;
       break;
@@ -1814,6 +1838,14 @@ function updateVillager(v, dt) {
       v.workT -= dt;
       if (v.workT <= 0) {
         const kind = v.craftKind;
+        if (kind === 'coat') {
+          if ((stocks.fur || 0) >= 3 && stocks.wood >= 2) {
+            stocks.fur -= 3; stocks.wood -= 2; v.coat = true;
+            logEvent('🧥', `${v.name} сшил${v.gender === 'f' ? 'а' : ''} меховую шубу — метель теперь нипочём!`);
+          } else think(v, 'Меха на шубу не хватило…');
+          v.state = 'idle'; v.decideT = 0.5;
+          break;
+        }
         const cost = kind === 'axe' ? { wood: 3, stone: 2 } : { wood: 3, stone: 2 };
         if (stocks.wood >= cost.wood && stocks.stone >= cost.stone) {
           stocks.wood -= cost.wood; stocks.stone -= cost.stone;
@@ -1851,8 +1883,16 @@ function updateVillager(v, dt) {
       } else {
         a.hp = 0;
         v.huntId = 0;
-        v.carry.berries += 2;
-        logEvent('🏹', `${v.name} поймал кролика (+2 🫐)`);
+        if (a.kind === 'rabbit') {
+          v.carry.berries += 2;
+          logEvent('🏹', `${v.name} поймал кролика (+2 🫐)`);
+        } else {
+          const meat = a.kind === 'wolf' ? 3 : 4;
+          v.carry.berries += meat;
+          v.carry.fur = (v.carry.fur || 0) + (a.kind === 'wolf' ? 1 : 2);
+          const AN = { wolf: 'волка', camel: 'верблюда', deer: 'оленя' }[a.kind] || 'зверя';
+          logEvent('🏹', `${v.name} добыл${v.gender === 'f' ? 'а' : ''} ${AN} (+${meat} 🍖 +2 🧥 мех)`);
+        }
         if (v.eatIntent) {
           v.eatIntent = false;
           v.carry.berries = Math.max(0, v.carry.berries - 1);
@@ -1922,6 +1962,7 @@ function updateVillager(v, dt) {
     }
     case 'goto_deposit': {
       stocks.wood += v.carry.wood; stocks.berries += v.carry.berries; stocks.stone += v.carry.stone;
+      stocks.fur = (stocks.fur || 0) + (v.carry.fur || 0); v.carry.fur = 0;
       if (v.carry.wood > 0 || v.carry.berries > 0 || v.carry.stone > 0)
         logEvent('📦', `${v.name} сдал запасы: +${v.carry.wood} 🪵 +${v.carry.berries} 🫐 +${v.carry.stone} 🪨`);
       v.carry = { wood: 0, berries: 0, stone: 0 };
@@ -2448,6 +2489,7 @@ function drawVillager(v) {
   ctx.fill();
   if (v.isChild) ctx.drawImage(set[frame], Math.round(x), Math.round(y), 8 * scale, 14 * scale);
   else ctx.drawImage(set[frame], Math.round(x), Math.round(y));
+  if (v.coat && !v.isChild) { px(ctx, x + 2, y + 5, 122, 84, 48); px(ctx, x + 5, y + 5, 122, 84, 48); px(ctx, x + 3, y + 6, 100, 66, 38); px(ctx, x + 4, y + 6, 100, 66, 38); }
   // имя при зуме
   if (zoom >= 2) {
     ctx.font = '4px monospace';
@@ -2939,7 +2981,7 @@ function saveGame() {
       villagers: villagers.map(v => ({
         id: v.id, n: v.name, bi: v.bodyIdx, x: v.x, y: v.y,
         ch: v.isChild ? 1 : 0, gr: v.growAt,
-        hp: v.hp, tl: v.tool || null, sp: v.spear ? 1 : 0,
+        hp: v.hp, tl: v.tool || null, sp: v.spear ? 1 : 0, ct: v.coat ? 1 : 0,
         nd: { ...v.needs }, tr: v.traits.slice(), sk: { ...v.skill },
         rl: v.relP || 0, pg: v.pregUntil || 0
       }))
@@ -2976,7 +3018,7 @@ function restoreWorld(raw) {
       if (sv.id) { v.id = sv.id; nextId = Math.max(nextId, sv.id + 1); }
       v.name = sv.n; v.bodyIdx = sv.bi; v.isChild = !!sv.ch; v.growAt = sv.gr;
       v.hp = sv.hp; v.tool = sv.tl; v.spear = !!sv.sp;
-      v.needs = sv.nd; v.traits = sv.tr; v.skill = sv.sk;
+      v.needs = sv.nd; v.traits = sv.tr; v.skill = sv.sk; v.coat = !!sv.ct;
       v.relP = sv.rl || 0; v.pregUntil = sv.pg || 0;
       v.state = 'idle'; v.path = null; v.decideT = 1;
       villagers.push(v);
@@ -2984,6 +3026,7 @@ function restoreWorld(raw) {
     if (mode === 'life' && P) resolveLifeParents();
     if (mode === 'life' && P) resolveLifeParents();
     stocks = d.stocks;
+    if (!stocks.fur) stocks.fur = 0;
     Object.keys(d.sim).forEach(k => SIM[k] = d.sim[k]);
     totalWood = d.totalWood;
     settlersThresholds = d.settlers;
